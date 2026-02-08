@@ -202,8 +202,12 @@
                 const statusBadge = document.getElementById('docker-status');
                 const dockerInfo = document.getElementById('docker-info');
 
-                const isRunning = data.running || data.status === 'running';
-
+		// Handle boolean or object responses
+        	const isRunning =
+            	data === true ||
+            	data === 'true' ||
+            	(typeof data === 'object' && (data.running || data.status === 'running'));
+		
                 statusBadge.innerHTML = isRunning 
                     ? '<span class="status-badge status-running">✓ Running</span>'
                     : '<span class="status-badge status-stopped">✗ Stopped</span>';
