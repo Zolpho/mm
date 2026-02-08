@@ -1,0 +1,29 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Create config.js
+        run: |
+          cat > config.js << EOF
+          const CONFIG = {
+              apiUrl: '${{ secrets.API_URL }}',
+              username: '${{ secrets.API_USERNAME }}',
+              password: '${{ secrets.API_PASSWORD }}',
+              refreshInterval: 10000
+          };
+          EOF
+      
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./
+

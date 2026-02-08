@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docker Status Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .status-running {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-stopped {
+            background: #ef4444;
+            color: white;
+        }
+
+        .status-unknown {
+            background: #6b7280;
+            color: white;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .card h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .container-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .container-item {
+            background: #f9fafb;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .container-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+
+        .container-details {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #6b7280;
+        }
+
+        .error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .warning {
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            color: #92400e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .last-update {
+            text-align: right;
+            color: #6b7280;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .refresh-info {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e40af;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        pre {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🐳 Docker Status Monitor</h1>
+            <div id="docker-status">
+                <span class="status-badge status-unknown">Checking...</span>
+            </div>
+        </header>
+
+        <div id="config-warning"></div>
+
+        <div class="card">
+            <div class="refresh-info">
+                Auto-refreshing every 10 seconds
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Docker Service Status</h2>
+            <div id="docker-info" class="loading">Loading...</div>
+        </div>
+
+        <div class="card">
+            <h2>Active Containers</h2>
+            <div id="containers-info" class="loading">Loading...</div>
+        </div>
+
+        <div class="last-update" id="last-update"></div>
+    </div>
+
+    <!-- Load configuration from external file -->
+    <script src="config.js"></script>
+
+    <script>
+        // Check if configuration is loaded
+        if (typeof CONFIG === 'undefined') {
+            document.getElementById('config-warning').innerHTML = `
+                <div class="warning">
+                    <strong>⚠️ Configuration Missing</strong><br>
+                    Please create a <code>config.js</code> file with your API settings.
+                </div>
+            `;
+            document.getElementById('docker-info').innerHTML = 
+                '<div class="error">Configuration file not found. Please check setup instructions.</div>';
+            document.getElementById('containers-info').innerHTML = 
+                '<div class="error">Configuration file not found. Please check setup instructions.</div>';
+            throw new Error('CONFIG not defined');
+        }
+
+        const API_BASE = CONFIG.apiUrl;
+        const REFRESH_INTERVAL = CONFIG.refreshInterval || 10000;
+
+        async function fetchWithAuth(url) {
+            const headers = {
+                'Accept': 'application/json'
+            };
+
+            // Add authentication if provided
+            if (CONFIG.username && CONFIG.password) {
+                const auth = btoa(`${CONFIG.username}:${CONFIG.password}`);
+                headers['Authorization'] = `Basic ${auth}`;
+            }
+
+            const response = await fetch(url, { headers });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            return await response.json();
+        }
+
+        async function checkDockerStatus() {
+            try {
+                const data = await fetchWithAuth(`${API_BASE}/docker/running`);
+                const statusBadge = document.getElementById('docker-status');
+                const dockerInfo = document.getElementById('docker-info');
+
+                const isRunning = data.running || data.status === 'running';
+
+                statusBadge.innerHTML = isRunning 
+                    ? '<span class="status-badge status-running">✓ Running</span>'
+                    : '<span class="status-badge status-stopped">✗ Stopped</span>';
+
+                dockerInfo.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+
+            } catch (error) {
+                document.getElementById('docker-status').innerHTML = 
+                    '<span class="status-badge status-unknown">Error</span>';
+                document.getElementById('docker-info').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function fetchActiveContainers() {
+            try {
+                const data = await fetchWithAuth(`${API_BASE}/docker/active-containers`);
+                const containersDiv = document.getElementById('containers-info');
+
+                if (Array.isArray(data) && data.length > 0) {
+                    containersDiv.innerHTML = `
+                        <div class="container-list">
+                            ${data.map(container => `
+                                <div class="container-item">
+                                    <div class="container-name">${container.name || container.Names || 'Unnamed Container'}</div>
+                                    <div class="container-details">
+                                        ${container.id || container.Id ? `ID: ${(container.id || container.Id).substring(0, 12)}` : ''}
+                                        ${container.status || container.Status ? ` | Status: ${container.status || container.Status}` : ''}
+                                        ${container.image || container.Image ? ` | Image: ${container.image || container.Image}` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div style="margin-top: 15px; padding: 10px; background: #f0fdf4; border-radius: 6px; color: #15803d; font-size: 14px;">
+                            Total active containers: ${data.length}
+                        </div>
+                    `;
+                } else if (Array.isArray(data) && data.length === 0) {
+                    containersDiv.innerHTML = '<div style="color: #6b7280; text-align: center;">No active containers found</div>';
+                } else {
+                    containersDiv.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                }
+
+            } catch (error) {
+                document.getElementById('containers-info').innerHTML = 
+                    `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        function updateTimestamp() {
+            const now = new Date();
+            document.getElementById('last-update').textContent = 
+                `Last updated: ${now.toLocaleString()}`;
+        }
+
+        async function refreshAll() {
+            await Promise.all([
+                checkDockerStatus(),
+                fetchActiveContainers()
+            ]);
+            updateTimestamp();
+        }
+
+        // Initial load
+        refreshAll();
+
+        // Auto-refresh
+        setInterval(refreshAll, REFRESH_INTERVAL);
+    </script>
+</body>
+</html>
