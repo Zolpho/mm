@@ -4,15 +4,19 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Create config.js
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create config.js from GitHub secrets
         run: |
-          cat > config.js << EOF
+          cat > config.js << 'EOF'
           const CONFIG = {
               apiUrl: '${{ secrets.API_URL }}',
               username: '${{ secrets.API_USERNAME }}',
@@ -20,10 +24,18 @@ jobs:
               refreshInterval: 10000
           };
           EOF
-      
+
+      - name: Verify files before deploy
+        run: |
+          echo "📂 Files to be deployed:"
+          ls -la
+          echo ""
+          echo "📄 config.js contents:"
+          cat config.js
+
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./
-
+          force_orphan: false
