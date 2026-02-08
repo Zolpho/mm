@@ -14,31 +14,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Create config.js
-        env:
-          API_URL: ${{ secrets.API_URL }}
-          API_USERNAME: ${{ secrets.API_USERNAME }}
-          API_PASSWORD: ${{ secrets.API_PASSWORD }}
-        run: |
-          echo "const CONFIG = {" > config.js
-          echo "    apiUrl: '${API_URL}'," >> config.js
-          echo "    username: '${API_USERNAME}'," >> config.js
-          echo "    password: '${API_PASSWORD}'," >> config.js
-          echo "    refreshInterval: 10000" >> config.js
-          echo "};" >> config.js
-
-      - name: Debug - Show files
-        run: |
-          echo "=== Files in directory ==="
-          ls -la
-          echo ""
-          echo "=== config.js contents ==="
-          cat config.js
-          echo ""
-          echo "=== End of config.js ==="
-
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./
+
