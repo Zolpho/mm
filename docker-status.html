@@ -184,42 +184,18 @@
     <!-- Load configuration from external file -->
     <script src="config.js"></script>
 
-    <script>
-        // Check if configuration is loaded
-        if (typeof CONFIG === 'undefined') {
-            document.getElementById('config-warning').innerHTML = `
-                <div class="warning">
-                    <strong>⚠️ Configuration Missing</strong><br>
-                    Please create a <code>config.js</code> file with your API settings.
-                </div>
-            `;
-            document.getElementById('docker-info').innerHTML = 
-                '<div class="error">Configuration file not found. Please check setup instructions.</div>';
-            document.getElementById('containers-info').innerHTML = 
-                '<div class="error">Configuration file not found. Please check setup instructions.</div>';
-            throw new Error('CONFIG not defined');
-        }
+	<script>
+  const API_BASE = 'https://docker-proxy-eta.vercel.app/api/docker';
+  const REFRESH_INTERVAL = 10000;
 
-        const API_BASE = CONFIG.apiUrl;
-        const REFRESH_INTERVAL = CONFIG.refreshInterval || 10000;
-
-        async function fetchWithAuth(endpoint) {
-	    // Build URL with endpoint as query parameter
-    	    const url = `${API_BASE}?endpoint=${encodeURIComponent(endpoint)}`;
-    
-    	    const response = await fetch(url, {
-            	headers: {
-            		'Accept': 'application/json'
-        	}
-	    });
-    
-    	    if (!response.ok) {
-            	throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-    
-    	    return await response.json();
-	}	
-
+  async function fetchWithAuth(endpoint) {
+      const url = `${API_BASE}?endpoint=${encodeURIComponent(endpoint)}`;
+      const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return await response.json();
+  }
 	
 
         async function checkDockerStatus() {
