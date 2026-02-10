@@ -258,4 +258,4 @@ Repo → Settings → Pages
 Source: gh-pages branch, root folder
 
 Resulting URL:
-https://<your-username>.github.io/money_maker/docker-status.html
+https://<your-username>.github.io/money_maker/eqty.html
