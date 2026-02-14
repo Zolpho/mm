@@ -296,6 +296,11 @@
       </div>
 
       <div class="card">
+        <h2>Bot Status</h2>
+        <div id="gateio-bot-status" class="loading">Loading...</div>
+      </div>
+
+      <div class="card">
         <h2>Gate.io Stats & Trades</h2>
         <div id="gateio-content" class="loading">Loading Gate.io data...</div>
       </div>
@@ -470,6 +475,7 @@ async function fetchMQTTStatus() {
   } else if (tabName === 'gateio') {
     pageTitle.textContent = '💹 Gate.io - EQTY MM stats';
     loadGateioBalance();
+    loadGateioBotStatus();
     loadGateioData();
   }
 }
@@ -571,6 +577,7 @@ async function fetchMQTTStatus() {
 
     // ==================== BOT STATUS FUNCTIONS ====================
 
+    // KuCoin Bot Status
     async function loadKucoinBotStatus() {
       const container = document.getElementById('kucoin-bot-status');
       if (!container) return;
@@ -584,7 +591,27 @@ async function fetchMQTTStatus() {
           fetchPortfolioState(['cex_mm_kucoin'], ['kucoin'])
         ]);
 
-        renderBotStatus(container, statusData, orderBookData, portfolioData);
+        renderBotStatus(container, statusData, orderBookData, portfolioData, 'kucoin');
+      } catch (error) {
+        container.innerHTML = `<div class="error">Error loading bot status: ${error.message}</div>`;
+      }
+    }
+
+    // Gate.io Bot Status
+    async function loadGateioBotStatus() {
+      const container = document.getElementById('gateio-bot-status');
+      if (!container) return;
+
+      container.innerHTML = '<div class="loading">Loading bot status...</div>';
+
+      try {
+        const [statusData, orderBookData, portfolioData] = await Promise.all([
+          fetchBotStatus('da6132e324292f6f7b914b58333808506f741db0'),
+          fetchOrderBook('gate_io', 'EQTY-USDT'),
+          fetchPortfolioState(['cex_mm_gate'], ['gate_io'])
+        ]);
+
+        renderBotStatus(container, statusData, orderBookData, portfolioData, 'gate_io');
       } catch (error) {
         container.innerHTML = `<div class="error">Error loading bot status: ${error.message}</div>`;
       }
@@ -637,35 +664,34 @@ async function fetchMQTTStatus() {
     }
 
     function parseOrdersFromLogs(logs) {
-  const orderPattern = /Created (LIMIT_MAKER|LIMIT) (BUY|SELL) order (\S+) for ([\d.]+) EQTY-USDT at ([\d.]+)/;
-  const uniqueOrders = new Map();
+      const orderPattern = /Created (LIMIT_MAKER|LIMIT) (BUY|SELL) order (\S+) for ([\d.]+) EQTY-USDT at ([\d.]+)/;
+      const uniqueOrders = new Map();
 
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const log = logs[i];
-    const msg = log.msg || '';
-    const match = msg.match(orderPattern);
-    
-    if (match) {
-      const [, orderType, side, orderId, amount, price] = match;
-      const priceLevel = parseFloat(price).toFixed(6); // Use price as unique key
-      const key = `${side}_${priceLevel}`; // Unique key per side+price
-      
-      if (!uniqueOrders.has(key)) {
-        uniqueOrders.set(key, {
-          orderType,
-          side,
-          orderId,
-          amount: parseFloat(amount),
-          price: parseFloat(price),
-          timestamp: log.timestamp
-        });
+      for (let i = logs.length - 1; i >= 0; i--) {
+        const log = logs[i];
+        const msg = log.msg || '';
+        const match = msg.match(orderPattern);
+
+        if (match) {
+          const [, orderType, side, orderId, amount, price] = match;
+          const priceLevel = parseFloat(price).toFixed(6);
+          const key = `${side}_${priceLevel}`;
+
+          if (!uniqueOrders.has(key)) {
+            uniqueOrders.set(key, {
+              orderType,
+              side,
+              orderId,
+              amount: parseFloat(amount),
+              price: parseFloat(price),
+              timestamp: log.timestamp
+            });
+          }
+        }
       }
-    }
-  }
 
-  return Array.from(uniqueOrders.values());
-}
-      
+      return Array.from(uniqueOrders.values());
+    }
 
     function calculateAssetMetrics(balances, midPrice) {
       const eqtyBalance = balances.find(b => b.token === 'EQTY') || {};
@@ -718,7 +744,7 @@ async function fetchMQTTStatus() {
       };
     }
 
-    function renderBotStatus(container, statusData, orderBookData, portfolioData) {
+    function renderBotStatus(container, statusData, orderBookData, portfolioData, exchange) {
       const logs = statusData?.data?.general_logs || [];
       const orders = parseOrdersFromLogs(logs);
 
@@ -726,11 +752,20 @@ async function fetchMQTTStatus() {
       const bestAsk = orderBookData?.asks?.[0]?.price || 0;
       const midPrice = (parseFloat(bestBid) + parseFloat(bestAsk)) / 2;
 
-      const balances = portfolioData?.cex_mm_kucoin?.kucoin || [];
+      // Handle different portfolio response structures
+      let balances = [];
+      if (exchange === 'kucoin') {
+        balances = portfolioData?.cex_mm_kucoin?.kucoin || [];
+      } else if (exchange === 'gate_io') {
+        balances = portfolioData?.cex_mm_gate?.gate_io || [];
+      }
+
       const assets = calculateAssetMetrics(balances, midPrice);
 
       const buyOrders = orders.filter(o => o.side === 'BUY').sort((a, b) => b.price - a.price).slice(0, 5);
       const sellOrders = orders.filter(o => o.side === 'SELL').sort((a, b) => a.price - b.price).slice(0, 5);
+
+      const exchangeName = exchange === 'kucoin' ? 'kucoin' : 'gate.io';
 
       const balanceWarning = !assets.isBalanced ? `
         <div class="warning">
@@ -738,7 +773,7 @@ async function fetchMQTTStatus() {
         </div>
       ` : '';
 
-      const html = `
+      const htmlContent = `
         ${balanceWarning}
 
         <div style="margin-bottom: 20px;">
@@ -755,7 +790,7 @@ async function fetchMQTTStatus() {
             </thead>
             <tbody>
               <tr>
-                <td>kucoin</td>
+                <td>${exchangeName}</td>
                 <td>EQTY-USDT</td>
                 <td>${bestBid.toFixed(6)}</td>
                 <td>${bestAsk.toFixed(6)}</td>
@@ -870,9 +905,11 @@ async function fetchMQTTStatus() {
         </div>
       `;
 
-      container.innerHTML = html;
+      container.innerHTML = htmlContent;
 
-      window.eqtyBotMetrics = {
+      // Expose metrics for Zabbix
+      const metricsKey = exchange === 'kucoin' ? 'eqtyBotMetrics' : 'gateioMetrics';
+      window[metricsKey] = {
         eqty_current_pct: assets.eqty.currentPct,
         usdt_current_pct: assets.usdt.currentPct,
         eqty_order_adjust: assets.eqty.orderAdjust,
