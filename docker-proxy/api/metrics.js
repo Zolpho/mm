@@ -131,8 +131,6 @@ function parseActiveOrdersFromLogs(logs) {
   const fillPattern = /Filled ([\d.]+) out of ([\d.]+) of the (BUY|SELL) order (\S+)/;
   
   const activeOrders = new Map();
-  const cancelledOrders = new Set();
-  const filledOrders = new Set();
   
   // Process logs chronologically to track order lifecycle
   for (const log of logs) {
@@ -142,14 +140,13 @@ function parseActiveOrdersFromLogs(logs) {
     const createMatch = msg.match(createPattern);
     if (createMatch) {
       const [, type, side, orderId, amount, price] = createMatch;
-      const priceLevel = parseFloat(price).toFixed(6);
-      const key = `${side}_${priceLevel}`;
       
-      activeOrders.set(key, { 
-        side, 
+      // KEY FIX: Use orderId as key, not price level
+      activeOrders.set(orderId, {
+        side,
         price: parseFloat(price),
         orderId,
-        key
+        amount: parseFloat(amount)
       });
       continue;
     }
@@ -158,15 +155,7 @@ function parseActiveOrdersFromLogs(logs) {
     const cancelMatch = msg.match(cancelPattern);
     if (cancelMatch) {
       const [, orderId] = cancelMatch;
-      cancelledOrders.add(orderId);
-      
-      // Remove from active orders
-      for (const [key, order] of activeOrders.entries()) {
-        if (order.orderId === orderId) {
-          activeOrders.delete(key);
-          break;
-        }
-      }
+      activeOrders.delete(orderId);  // Now this works correctly!
       continue;
     }
     
@@ -177,14 +166,7 @@ function parseActiveOrdersFromLogs(logs) {
       
       // If fully filled, remove from active
       if (parseFloat(filledAmount) === parseFloat(totalAmount)) {
-        filledOrders.add(orderId);
-        
-        for (const [key, order] of activeOrders.entries()) {
-          if (order.orderId === orderId) {
-            activeOrders.delete(key);
-            break;
-          }
-        }
+        activeOrders.delete(orderId);  // Now this works correctly!
       }
     }
   }
