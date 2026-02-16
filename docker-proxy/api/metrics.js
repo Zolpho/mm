@@ -4,7 +4,8 @@ export default async function handler(req, res) {
   // CORS headers
   const allowedOrigins = [
     'https://zolpho.github.io',
-    'https://eqty-dao.github.io'
+    'https://eqty-dao.github.io',
+    'https://eqty.me'
   ];
   
   const origin = req.headers.origin;
