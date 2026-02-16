@@ -133,62 +133,49 @@ function parseActiveOrdersFromLogs(logs) {
   const activeOrders = new Map();
   const cancelledOrders = new Set();
   
-  // First pass: collect all cancelled order IDs
+  // First pass: collect all cancelled/filled order IDs from entire log
   for (const log of logs) {
     const msg = log.msg || '';
+    
     const cancelMatch = msg.match(cancelPattern);
     if (cancelMatch) {
       cancelledOrders.add(cancelMatch[1]);
     }
+    
+    const fillMatch = msg.match(fillPattern);
+    if (fillMatch) {
+      const [, filledAmount, totalAmount, side, orderId] = fillMatch;
+      if (parseFloat(filledAmount) === parseFloat(totalAmount)) {
+        cancelledOrders.add(orderId);
+      }
+    }
   }
   
-  // Second pass: only count recent orders (last 3 minutes) that weren't cancelled
-  const threeMinutesAgo = Date.now() - (3 * 60 * 1000);
-  
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const log = logs[i];
+  // Second pass: process last 50 logs in reverse (newest first)
+  const recentLogs = logs.slice(-50);
+  for (let i = recentLogs.length - 1; i >= 0; i--) {
+    const log = recentLogs[i];
     const msg = log.msg || '';
     
-    // Parse timestamp if available (adjust based on your log format)
-    const timestamp = log.timestamp ? new Date(log.timestamp).getTime() : Date.now();
-    
-    // Skip old logs
-    if (timestamp < threeMinutesAgo) {
-      continue;
-    }
-    
-    // Track created orders
     const createMatch = msg.match(createPattern);
     if (createMatch) {
       const [, type, side, orderId, amount, price] = createMatch;
       
-      // Skip if this order was cancelled
-      if (cancelledOrders.has(orderId)) {
+      // Skip if cancelled or already added
+      if (cancelledOrders.has(orderId) || activeOrders.has(orderId)) {
         continue;
       }
       
-      // Skip if already counted
-      if (activeOrders.has(orderId)) {
-        continue;
-      }
-      
-      // Add to active orders
       activeOrders.set(orderId, {
         side,
         price: parseFloat(price),
         orderId,
         amount: parseFloat(amount)
       });
-    }
-    
-    // Track filled orders
-    const fillMatch = msg.match(fillPattern);
-    if (fillMatch) {
-      const [, filledAmount, totalAmount, side, orderId] = fillMatch;
       
-      // If fully filled, remove from active
-      if (parseFloat(filledAmount) === parseFloat(totalAmount)) {
-        activeOrders.delete(orderId);
+      // Stop if we have enough orders (safety cap)
+      if (activeOrders.size >= 15) {
+        break;
       }
     }
   }
