@@ -131,32 +131,54 @@ function parseActiveOrdersFromLogs(logs) {
   const fillPattern = /Filled ([\d.]+) out of ([\d.]+) of the (BUY|SELL) order (\S+)/;
   
   const activeOrders = new Map();
+  const cancelledOrders = new Set();
   
-  // Process logs chronologically to track order lifecycle
+  // First pass: collect all cancelled order IDs
   for (const log of logs) {
     const msg = log.msg || '';
+    const cancelMatch = msg.match(cancelPattern);
+    if (cancelMatch) {
+      cancelledOrders.add(cancelMatch[1]);
+    }
+  }
+  
+  // Second pass: only count recent orders (last 3 minutes) that weren't cancelled
+  const threeMinutesAgo = Date.now() - (3 * 60 * 1000);
+  
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const log = logs[i];
+    const msg = log.msg || '';
+    
+    // Parse timestamp if available (adjust based on your log format)
+    const timestamp = log.timestamp ? new Date(log.timestamp).getTime() : Date.now();
+    
+    // Skip old logs
+    if (timestamp < threeMinutesAgo) {
+      continue;
+    }
     
     // Track created orders
     const createMatch = msg.match(createPattern);
     if (createMatch) {
       const [, type, side, orderId, amount, price] = createMatch;
       
-      // KEY FIX: Use orderId as key, not price level
+      // Skip if this order was cancelled
+      if (cancelledOrders.has(orderId)) {
+        continue;
+      }
+      
+      // Skip if already counted
+      if (activeOrders.has(orderId)) {
+        continue;
+      }
+      
+      // Add to active orders
       activeOrders.set(orderId, {
         side,
         price: parseFloat(price),
         orderId,
         amount: parseFloat(amount)
       });
-      continue;
-    }
-    
-    // Track cancelled orders
-    const cancelMatch = msg.match(cancelPattern);
-    if (cancelMatch) {
-      const [, orderId] = cancelMatch;
-      activeOrders.delete(orderId);  // Now this works correctly!
-      continue;
     }
     
     // Track filled orders
@@ -166,12 +188,11 @@ function parseActiveOrdersFromLogs(logs) {
       
       // If fully filled, remove from active
       if (parseFloat(filledAmount) === parseFloat(totalAmount)) {
-        activeOrders.delete(orderId);  // Now this works correctly!
+        activeOrders.delete(orderId);
       }
     }
   }
   
-  // Return only orders that are still active
   return Array.from(activeOrders.values());
 }
 
