@@ -471,17 +471,38 @@ async function fetchMQTTStatus() {
     sec.classList.toggle('active', sec.id === `tab-${tabName}`);
   });
 
-  // Update page header to show active tab
+  // Update page header and status badge
   const pageTitle = document.querySelector('h1');
+  const statusDiv = document.getElementById('docker-status');
+  
   if (tabName === 'docker') {
     pageTitle.textContent = '🐳 Docker & Hummingbot Monitor';
+    // Docker status is updated by checkDockerStatus()
+    
   } else if (tabName === 'kucoin') {
     pageTitle.textContent = '💹 KuCoin - EQTY MM stats';
+    // Update header status for KuCoin bot
+    if (window.kucoinBotRunning !== undefined) {
+      statusDiv.innerHTML = window.kucoinBotRunning
+        ? '<span class="status-badge status-running">✓ Running</span>'
+        : '<span class="status-badge status-stopped">✗ Stopped</span>';
+    } else {
+      statusDiv.innerHTML = '<span class="status-badge status-unknown">⏳ Checking...</span>';
+    }
     loadKucoinBalance();
     loadKucoinBotStatus();
     loadKucoinData();
+    
   } else if (tabName === 'gateio') {
     pageTitle.textContent = '💹 Gate.io - EQTY MM stats';
+    // Update header status for Gate.io bot
+    if (window.gateioBotRunning !== undefined) {
+      statusDiv.innerHTML = window.gateioBotRunning
+        ? '<span class="status-badge status-running">✓ Running</span>'
+        : '<span class="status-badge status-stopped">✗ Stopped</span>';
+    } else {
+      statusDiv.innerHTML = '<span class="status-badge status-unknown">⏳ Checking...</span>';
+    }
     loadGateioBalance();
     loadGateioBotStatus();
     loadGateioData();
@@ -600,17 +621,19 @@ async function loadKucoinBotStatus() {
       fetchPortfolioState(['cex_mm_kucoin'], ['kucoin'])
     ]);
     
-    // Render the full bot status first
+    // Store bot running status globally
+    window.kucoinBotRunning = statusData?.data?.running === true;
+    
+    // Update header status if on KuCoin tab
+    const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+    if (activeTab === 'kucoin') {
+      const statusDiv = document.getElementById('docker-status');
+      statusDiv.innerHTML = window.kucoinBotRunning
+        ? '<span class="status-badge status-running">✓ Running</span>'
+        : '<span class="status-badge status-stopped">✗ Stopped</span>';
+    }
+  
     renderBotStatus(container, statusData, orderBookData, portfolioData, 'kucoin', botId);
-    
-    // Then prepend the running status at the top
-    const isRunning = statusData?.data?.running === true;
-    const statusBadge = isRunning
-      ? '<div style="padding: 10px; margin-bottom: 15px; background: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;"><span style="color: #15803d; font-weight: 600; font-size: 16px;">✓ Bot Running</span></div>'
-      : '<div style="padding: 10px; margin-bottom: 15px; background: #fef2f2; border-radius: 8px; border: 1px solid #fca5a5;"><span style="color: #dc2626; font-weight: 600; font-size: 16px;">✗ Bot Stopped</span></div>';
-    
-    container.insertAdjacentHTML('afterbegin', statusBadge);
-    
   } catch (error) {
     container.innerHTML = `<div class="error">Error loading bot status: ${error.message}</div>`;
   } 
@@ -631,17 +654,19 @@ async function loadGateioBotStatus() {
       fetchPortfolioState(['cex_mm_gate'], ['gate_io'])
     ]);
     
-    // Render the full bot status first
-    renderBotStatus(container, statusData, orderBookData, portfolioData, 'gate_io', botId);
+    // Store bot running status globally
+    window.gateioBotRunning = statusData?.data?.running === true;
     
-    // Then prepend the running status at the top
-    const isRunning = statusData?.data?.running === true;
-    const statusBadge = isRunning
-      ? '<div style="padding: 10px; margin-bottom: 15px; background: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;"><span style="color: #15803d; font-weight: 600; font-size: 16px;">✓ Bot Running</span></div>'
-      : '<div style="padding: 10px; margin-bottom: 15px; background: #fef2f2; border-radius: 8px; border: 1px solid #fca5a5;"><span style="color: #dc2626; font-weight: 600; font-size: 16px;">✗ Bot Stopped</span></div>';
-    
-    container.insertAdjacentHTML('afterbegin', statusBadge);
+    // Update header status if on Gate.io tab
+    const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+    if (activeTab === 'gateio') {
+      const statusDiv = document.getElementById('docker-status');
+      statusDiv.innerHTML = window.gateioBotRunning
+        ? '<span class="status-badge status-running">✓ Running</span>'
+        : '<span class="status-badge status-stopped">✗ Stopped</span>';
+    }
 
+    renderBotStatus(container, statusData, orderBookData, portfolioData, 'gate_io', botId);
   } catch (error) {
     container.innerHTML = `<div class="error">Error loading bot status: ${error.message}</div>`;
   }
