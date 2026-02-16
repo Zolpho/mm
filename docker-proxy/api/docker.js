@@ -3,7 +3,8 @@ export default async function handler(req, res) {
   // Support both origins during transition
   const allowedOrigins = [
     'https://zolpho.github.io',
-    'https://eqty-dao.github.io'
+    'https://eqty-dao.github.io',
+    'https://eqty.me'
   ];
 
   // Check if request origin is allowed
