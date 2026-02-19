@@ -231,6 +231,64 @@
       background: #fee2e2;
       color: #b91c1c;
     }
+
+    /* === P&L Stats Grid === */
+    .pnl-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+      gap: 10px;
+    }
+    .pnl-stat {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px 10px;
+      text-align: center;
+    }
+    .pnl-stat .label {
+      font-size: 11px;
+      color: #9ca3af;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .pnl-stat .value {
+      font-size: 16px;
+      font-weight: 700;
+      color: #111827;
+      line-height: 1.2;
+    }
+    .pnl-stat .sub {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 3px;
+    }
+    .pnl-stat.positive { border-color: #86efac; background: #f0fdf4; }
+    .pnl-stat.positive .value { color: #15803d; }
+    .pnl-stat.negative { border-color: #fca5a5; background: #fef2f2; }
+    .pnl-stat.negative .value { color: #dc2626; }
+    .pnl-stat.neutral .value { color: #1e40af; }
+    .pnl-stat.highlight { border-width: 2px; }
+    /* === Days Selector === */
+    .days-selector {
+      display: inline-flex;
+      gap: 5px;
+      float: right;
+    }
+    .days-btn {
+      padding: 3px 12px;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      background: white;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .days-btn:hover { background: #f3f4f6; }
+    .days-btn.active { background: #4f46e5; color: white; border-color: #4f46e5; }
   </style>
 </head>
 <body>
@@ -289,8 +347,20 @@
       <div id="kucoin-bot-status" class="loading">Loading...</div>
     </div>
 
+
     <div class="card">
-      <h2>KuCoin Stats & Trades (last 1 day)</h2>
+      <h2>P&L Summary
+        <span class="days-selector" id="kucoin-days-selector">
+          <button class="days-btn active" data-days="1" onclick="loadKucoinData(1)">1D</button>
+          <button class="days-btn" data-days="7" onclick="loadKucoinData(7)">7D</button>
+          <button class="days-btn" data-days="30" onclick="loadKucoinData(30)">30D</button>
+        </span>
+      </h2>
+      <div id="kucoin-pnl" class="loading">Loading P&L...</div>
+    </div>
+
+    <div class="card">
+      <h2 id="kucoin-trades-heading">KuCoin Trades (last 1d)</h2>
       <div id="kucoin-content" class="loading">Loading KuCoin data...</div>
     </div>
     </section>
@@ -308,8 +378,20 @@
         <div id="gateio-bot-status" class="loading">Loading...</div>
       </div>
 
+
       <div class="card">
-        <h2>Gate.io Stats & Trades</h2>
+        <h2>P&L Summary
+          <span class="days-selector" id="gateio-days-selector">
+            <button class="days-btn active" data-days="1" onclick="loadGateioData(1)">1D</button>
+            <button class="days-btn" data-days="7" onclick="loadGateioData(7)">7D</button>
+            <button class="days-btn" data-days="30" onclick="loadGateioData(30)">30D</button>
+          </span>
+        </h2>
+        <div id="gateio-pnl" class="loading">Loading P&L...</div>
+      </div>
+
+      <div class="card">
+        <h2 id="gateio-trades-heading">Gate.io Trades (last 1d)</h2>
         <div id="gateio-content" class="loading">Loading Gate.io data...</div>
       </div>
   </section>
@@ -1038,6 +1120,7 @@ async function loadGateioBotStatus() {
       <span style="font-size: 14px; background: #f0fdf4; color: #15803d; padding: 4px 12px; border-radius: 6px; font-weight: 500;">Total: $${totalValue.toFixed(2)}</span>
     </span>`;
 
+    window.kucoinPortfolioValue = totalValue;
     renderBalanceTable('kucoin-balance', balances);
   } catch (error) {
     el.classList.remove('loading');
@@ -1097,6 +1180,7 @@ async function loadGateioBalance() {
       <span style="font-size: 14px; background: #f0fdf4; color: #15803d; padding: 4px 12px; border-radius: 6px; font-weight: 500;">Total: $${totalValue.toFixed(2)}</span>
     </span>`;
 
+    window.gateioPortfolioValue = totalValue;
     renderBalanceTable('gateio-balance', balances);
   } catch (error) {
     el.classList.remove('loading');
@@ -1104,64 +1188,202 @@ async function loadGateioBalance() {
   }
 }
 
+
+    // ======== P&L COMPUTATION ========
+
+    function computePnlStats(trades) {
+      let buyVolume = 0, buyQty = 0, buyCount = 0;
+      let sellVolume = 0, sellQty = 0, sellCount = 0;
+      let totalFees = 0;
+
+      for (const t of trades) {
+        const price   = parseFloat(t.price) || 0;
+        const qty     = parseFloat(String(t.quantity ?? '').replace(/\.$/, '')) || 0;
+        const feeRate = parseFloat(t.raw_json?.trade_fee?.percent ?? '0.003');
+        const notional = price * qty;
+        totalFees += notional * feeRate;
+
+        if ((t.trade_type || '').toUpperCase() === 'BUY') {
+          buyVolume += notional; buyQty += qty; buyCount++;
+        } else {
+          sellVolume += notional; sellQty += qty; sellCount++;
+        }
+      }
+
+      const tradePnl      = sellVolume - buyVolume;
+      const netPnl        = tradePnl - totalFees;
+      const totalVolume   = buyVolume + sellVolume;
+      const avgBuyPrice   = buyQty  > 0 ? buyVolume  / buyQty  : 0;
+      const avgSellPrice  = sellQty > 0 ? sellVolume / sellQty : 0;
+      const netEqtyChange = buyQty  - sellQty;
+
+      return {
+        buyVolume, buyQty, buyCount,
+        sellVolume, sellQty, sellCount,
+        totalFees, tradePnl, netPnl,
+        totalVolume, avgBuyPrice, avgSellPrice,
+        netEqtyChange, tradeCount: trades.length
+      };
+    }
+
+    function renderPnlStats(containerId, stats, totalPortfolioValue) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+
+      const returnPct = totalPortfolioValue > 0 ? (stats.netPnl / totalPortfolioValue) * 100 : null;
+
+      const fmt = (n, d = 4) => {
+        if (n === undefined || n === null) return '—';
+        const s = Math.abs(n).toFixed(d);
+        return n >= 0 ? `+$${s}` : `-$${s}`;
+      };
+
+      const pnlClass     = stats.netPnl  >= 0 ? 'positive' : 'negative';
+      const trPnlClass   = stats.tradePnl >= 0 ? 'positive' : 'negative';
+      const retClass     = returnPct === null ? 'neutral' : (returnPct >= 0 ? 'positive' : 'negative');
+      const invClass     = stats.netEqtyChange > 0 ? 'positive' : stats.netEqtyChange < 0 ? 'negative' : 'neutral';
+      const retLabel     = returnPct !== null
+        ? `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(3)}%`
+        : '—';
+      const retSub       = totalPortfolioValue > 0
+        ? `on $${totalPortfolioValue.toFixed(0)}`
+        : 'load balance first';
+
+      el.innerHTML = `
+        <div class="pnl-grid">
+          <div class="pnl-stat neutral">
+            <div class="label">Trades</div>
+            <div class="value">${stats.tradeCount}</div>
+            <div class="sub">${stats.buyCount}B / ${stats.sellCount}S</div>
+          </div>
+          <div class="pnl-stat neutral">
+            <div class="label">Volume</div>
+            <div class="value">$${stats.totalVolume.toFixed(2)}</div>
+            <div class="sub">notional USDT</div>
+          </div>
+          <div class="pnl-stat neutral">
+            <div class="label">Avg Buy</div>
+            <div class="value">${stats.avgBuyPrice > 0 ? stats.avgBuyPrice.toFixed(6) : '—'}</div>
+            <div class="sub">${stats.buyQty.toFixed(0)} EQTY</div>
+          </div>
+          <div class="pnl-stat neutral">
+            <div class="label">Avg Sell</div>
+            <div class="value">${stats.avgSellPrice > 0 ? stats.avgSellPrice.toFixed(6) : '—'}</div>
+            <div class="sub">${stats.sellQty.toFixed(0)} EQTY</div>
+          </div>
+          <div class="pnl-stat ${trPnlClass}">
+            <div class="label">Trade P&L</div>
+            <div class="value">${fmt(stats.tradePnl)}</div>
+            <div class="sub">gross (pre-fee)</div>
+          </div>
+          <div class="pnl-stat negative">
+            <div class="label">Fees Paid</div>
+            <div class="value">-$${stats.totalFees.toFixed(4)}</div>
+            <div class="sub">0.3% maker/taker</div>
+          </div>
+          <div class="pnl-stat ${pnlClass} highlight">
+            <div class="label">Net P&L</div>
+            <div class="value">${fmt(stats.netPnl)}</div>
+            <div class="sub">after fees</div>
+          </div>
+          <div class="pnl-stat ${retClass} highlight">
+            <div class="label">Return %</div>
+            <div class="value">${retLabel}</div>
+            <div class="sub">${retSub}</div>
+          </div>
+          <div class="pnl-stat ${invClass}">
+            <div class="label">Net EQTY Δ</div>
+            <div class="value">${stats.netEqtyChange > 0 ? '+' : ''}${stats.netEqtyChange.toFixed(0)}</div>
+            <div class="sub">${stats.netEqtyChange > 0 ? '↑ accumulating' : stats.netEqtyChange < 0 ? '↓ distributing' : '= neutral'}</div>
+          </div>
+        </div>
+      `;
+    }
+
     // -------- KuCoin data (using your history endpoint) --------
-    async function loadKucoinData() {
-      const el = document.getElementById('kucoin-content');
+    async function loadKucoinData(days = 1) {
+      document.querySelectorAll('#kucoin-days-selector .days-btn').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.days) === days);
+      });
+
+      const el    = document.getElementById('kucoin-content');
+      const pnlEl = document.getElementById('kucoin-pnl');
       el.classList.remove('error');
       el.classList.add('loading');
       el.textContent = 'Loading KuCoin data...';
+      if (pnlEl) { pnlEl.classList.add('loading'); pnlEl.textContent = 'Computing P&L...'; }
 
       try {
         const data = await fetchWithAuth(
-        '/bot-orchestration/ea5d7b611fd1da6ad5bffd559bac3c0ed6ed11d0/history?days=1&verbose=false&timeout=30'
+          `/bot-orchestration/ea5d7b611fd1da6ad5bffd559bac3c0ed6ed11d0/history?days=${days}&verbose=false&timeout=30`
         );
 
-    let trades =
-      data?.response?.data?.data?.trades ||
-      data?.response?.data?.trades ||
-      data?.data?.trades ||
-      data.trades ||
-      [];
-
-    // sort by trade_timestamp DESC (newest first)
-    trades = trades.slice().sort((a, b) => {
-      const ta = a.trade_timestamp || a.timestamp || 0;
-      const tb = b.trade_timestamp || b.timestamp || 0;
-      return tb - ta; // descending
-    });
-
-    renderTradesTable('kucoin-content', trades);
-  } catch (error) {
-    el.classList.remove('loading');
-    el.innerHTML = `<div class="error">Error loading KuCoin data: ${error.message}</div>`;
-  }
-}
-
-
-    // -------- Gate.io data (placeholder endpoint) --------
-    async function loadGateioData() {
-      const el = document.getElementById('gateio-content');
-      el.classList.remove('error');
-      el.classList.add('loading');
-      el.textContent = 'Loading Gate.io data...';
-
-      try {
-        // TODO: replace with your real Gate.io history endpoint
-        // Example placeholder:
-        // const data = await fetchWithAuth('/bot-orchestration/<gateio-bot-id>/history?days=1&verbose=false&timeout=30');
-        const data = await fetchWithAuth('/bot-orchestration/GATEIO_BOT_ID/history?days=1&verbose=false&timeout=30');
-
-        const trades =
+        let trades =
           data?.response?.data?.data?.trades ||
           data?.response?.data?.trades ||
           data?.data?.trades ||
           data.trades ||
           [];
 
+        trades = trades.slice().sort((a, b) => {
+          const ta = a.trade_timestamp || a.timestamp || 0;
+          const tb = b.trade_timestamp || b.timestamp || 0;
+          return tb - ta;
+        });
+
+        const stats = computePnlStats(trades);
+        const portfolioValue = window.kucoinPortfolioValue || window.eqtyBotMetrics?.total_value_usdt || 0;
+        renderPnlStats('kucoin-pnl', stats, portfolioValue);
+
+        renderTradesTable('kucoin-content', trades);
+      } catch (error) {
+        el.classList.remove('loading');
+        el.innerHTML = `<div class="error">Error loading KuCoin data: ${error.message}</div>`;
+        if (pnlEl) { pnlEl.classList.remove('loading'); pnlEl.innerHTML = `<div class="error">P&L error: ${error.message}</div>`; }
+      }
+    }
+
+
+    // -------- Gate.io data --------
+    async function loadGateioData(days = 1) {
+      document.querySelectorAll('#gateio-days-selector .days-btn').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.days) === days);
+      });
+
+      const el    = document.getElementById('gateio-content');
+      const pnlEl = document.getElementById('gateio-pnl');
+      el.classList.remove('error');
+      el.classList.add('loading');
+      el.textContent = 'Loading Gate.io data...';
+      if (pnlEl) { pnlEl.classList.add('loading'); pnlEl.textContent = 'Computing P&L...'; }
+
+      try {
+        const data = await fetchWithAuth(
+          `/bot-orchestration/da6132e324292f6f7b914b58333808506f741db0/history?days=${days}&verbose=false&timeout=30`
+        );
+
+        let trades =
+          data?.response?.data?.data?.trades ||
+          data?.response?.data?.trades ||
+          data?.data?.trades ||
+          data.trades ||
+          [];
+
+        trades = trades.slice().sort((a, b) => {
+          const ta = a.trade_timestamp || a.timestamp || 0;
+          const tb = b.trade_timestamp || b.timestamp || 0;
+          return tb - ta;
+        });
+
+        const stats = computePnlStats(trades);
+        const portfolioValue = window.gateioPortfolioValue || window.gateioMetrics?.total_value_usdt || 0;
+        renderPnlStats('gateio-pnl', stats, portfolioValue);
+
         renderTradesTable('gateio-content', trades);
       } catch (error) {
         el.classList.remove('loading');
         el.innerHTML = `<div class="error">Error loading Gate.io data: ${error.message}</div>`;
+        if (pnlEl) { pnlEl.classList.remove('loading'); pnlEl.innerHTML = `<div class="error">P&L error: ${error.message}</div>`; }
       }
     }
 
@@ -1173,5 +1395,6 @@ async function loadGateioBalance() {
   </script>
 </body>
 </html>
+
 
 
