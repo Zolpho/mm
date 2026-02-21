@@ -1161,27 +1161,24 @@ async function loadGateioBalance() {
       const tot=(Date.now()-cfg.start.getTime())/1000,dn=parseInt(localStorage.getItem(_dk(ex))||'0'),up=Math.max(0,tot-dn);
       return{d:Math.floor(up/86400),h:Math.floor((up%86400)/3600),m:Math.floor((up%3600)/60),pct:(up/tot)*100};
     }
-    // ── CHIPS — aligned under their tab button ───────────────────────────────
-    function _allChips(){return['chip-docker','chip-kucoin','chip-gateio'].map(id=>document.getElementById(id));}
-    function _hideAll(){_allChips().forEach(el=>{if(el)el.style.visibility='hidden';});}
+    // ── CHIPS — each aligned under its own tab button ────────────────────────
+    function _hideAll(){['chip-docker','chip-kucoin','chip-gateio'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.visibility='hidden';});}
     function renderUptimeBar(ex,running){
       _hideAll();
       const s=getUptimeStats(ex);
       const rc=running?'good':'down',ri=running?'&#9679;':'&#9675;',rl=running?'Running':'Stopped';
       const label=ex==='kucoin'?'KuCoin':'Gate.io';
-      const chipId=ex==='kucoin'?'chip-kucoin':'chip-gateio';
-      const chip=document.getElementById(chipId);if(!chip)return;
+      const chip=document.getElementById(ex==='kucoin'?'chip-kucoin':'chip-gateio');
+      if(!chip)return;
       chip.className=`uptime-chip ${rc}`;
       let html=`${ri} <strong>${label} ${rl}</strong>`;
       if(s)html+=`&nbsp;&nbsp;&#9201;&nbsp;<span id="uptime-timer-${ex}">${s.d}d ${s.h}h</span>&nbsp;&nbsp;${s.pct.toFixed(1)}%`;
-      else if(!s&&ex==='gateio')html+=`&nbsp;&#128338; Not started`;
       chip.innerHTML=html;chip.style.visibility='visible';
     }
     function startUptimeTick(ex){
       if(window[`_tick_${ex}`])return;
       window[`_tick_${ex}`]=setInterval(()=>{const s=getUptimeStats(ex),el=document.getElementById(`uptime-timer-${ex}`);if(s&&el)el.textContent=`${s.d}d ${s.h}h`;},60000);
     }
-    // ── ACTIVITY CHIPS — show both statuses under KuCoin + Gate.io ───────────
     function renderActivityChips(){
       _hideAll();
       const kc=document.getElementById('chip-kucoin'),gc=document.getElementById('chip-gateio');
@@ -1199,7 +1196,7 @@ async function loadGateioBalance() {
       const s=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',s);
       const b=document.getElementById('theme-toggle');if(b)b.textContent=s==='dark'?'\u2600\uFE0F':'\uD83C\uDF19';
     });
-    // ── P&L STATS ────────────────────────────────────────────────────────────
+    // ── P&L ──────────────────────────────────────────────────────────────────
     function computePnlStats(trades){
       let bv=0,bq=0,bc=0,sv=0,sq=0,sc=0,fees=0;
       for(const t of trades){
@@ -1225,20 +1222,23 @@ async function loadGateioBalance() {
       const tip=t=>`<span class="stat-help">?<span class="stat-tip">${t}</span></span>`;
       el.innerHTML=`<div class="pnl-grid">
         <div class="pnl-stat neutral">${tip('Number of executed trades (B\u202f=\u202fbuys, S\u202f=\u202fsells)')}<div class="label">Trades</div><div class="value">${s.tradeCount}</div><div class="sub">${s.buyCount}B / ${s.sellCount}S</div></div>
-        <div class="pnl-stat neutral">${tip('Total notional value traded in USDT (buys + sells combined)')}<div class="label">Volume</div><div class="value">$${s.totalVolume.toFixed(2)}</div><div class="sub">notional USDT</div></div>
-        <div class="pnl-stat neutral">${tip('Total EQTY tokens moved across all trades')}<div class="label">EQTY Vol</div><div class="value">${Math.round(s.totalEqtyVol).toLocaleString()}</div><div class="sub">tokens moved</div></div>
-        <div class="pnl-stat neutral">${tip('Weighted average price paid per EQTY across all buy orders')}<div class="label">Avg Buy</div><div class="value">${s.avgBuyPrice>0?s.avgBuyPrice.toFixed(6):'\u2014'}</div><div class="sub">${Math.round(s.buyQty).toLocaleString()} EQTY</div></div>
-        <div class="pnl-stat neutral">${tip('Weighted average price received per EQTY across all sell orders')}<div class="label">Avg Sell</div><div class="value">${s.avgSellPrice>0?s.avgSellPrice.toFixed(6):'\u2014'}</div><div class="sub">${Math.round(s.sellQty).toLocaleString()} EQTY</div></div>
-        <div class="pnl-stat ${sc2} highlight">${tip('Avg Sell \u2212 Avg Buy. Core MM metric: USDT and basis points earned per round-trip.')}<div class="label">Spread Capture</div><div class="value">${s.spread>=0?'+':''}${s.spread.toFixed(6)}</div><div class="sub">${s.spreadBps>=0?'+':''}${s.spreadBps.toFixed(1)} bps</div></div>
-        <div class="pnl-stat ${cls(s.tradePnl)}">${tip('Sell revenue minus buy cost \u2014 gross profit before fees')}<div class="label">Trade P&L</div><div class="value">${fmt(s.tradePnl)}</div><div class="sub">gross (pre-fee)</div></div>
-        <div class="pnl-stat negative">${tip('Total trading fees paid to the exchange')}<div class="label">Fees Paid</div><div class="value">-$${s.totalFees.toFixed(4)}</div><div class="sub">${s.totalVolume>0?(s.totalFees/s.totalVolume*100).toFixed(2):0}% effective</div></div>
-        <div class="pnl-stat ${cls(s.netPnl)} highlight">${tip('Trade P&L after deducting all fees')}<div class="label">Net P&L</div><div class="value">${fmt(s.netPnl)}</div><div class="sub">after fees</div></div>
-        <div class="pnl-stat ${cls(tpnl)} highlight">${tip('Net P&L + unsold EQTY inventory at current mid price')}<div class="label">True P&L</div><div class="value">${fmt(tpnl)}</div><div class="sub" style="font-size:10px;">${mp>0?`inv ${s.netEqtyChange>=0?'+':''}${Math.round(s.netEqtyChange).toLocaleString()} EQTY @ ${mp.toFixed(6)}`:'load bot status first'}</div></div>
-        <div class="pnl-stat ${cls(ret)} highlight">${tip('Net P&L as a percentage of total portfolio value')}<div class="label">Return %</div><div class="value">${fp(ret)}</div><div class="sub">${pv>0?`on $${pv.toFixed(0)}`:'load balance first'}</div></div>
-        <div class="pnl-stat ${ic}">${tip('Net change in EQTY holdings: positive = accumulating, negative = distributing')}<div class="label">Net EQTY \u0394</div><div class="value">${s.netEqtyChange>=0?'+':''}${Math.round(s.netEqtyChange).toLocaleString()}</div><div class="sub">${s.netEqtyChange>0?'\u2191 accumulating':s.netEqtyChange<0?'\u2193 distributing':'= neutral'}</div></div>
+        <div class="pnl-stat neutral">${tip('Total notional value traded in USDT')}<div class="label">Volume</div><div class="value">$${s.totalVolume.toFixed(2)}</div><div class="sub">notional USDT</div></div>
+        <div class="pnl-stat neutral">${tip('Total EQTY tokens moved')}<div class="label">EQTY Vol</div><div class="value">${Math.round(s.totalEqtyVol).toLocaleString()}</div><div class="sub">tokens moved</div></div>
+        <div class="pnl-stat neutral">${tip('Weighted avg price per EQTY across all buys')}<div class="label">Avg Buy</div><div class="value">${s.avgBuyPrice>0?s.avgBuyPrice.toFixed(6):'\u2014'}</div><div class="sub">${Math.round(s.buyQty).toLocaleString()} EQTY</div></div>
+        <div class="pnl-stat neutral">${tip('Weighted avg price per EQTY across all sells')}<div class="label">Avg Sell</div><div class="value">${s.avgSellPrice>0?s.avgSellPrice.toFixed(6):'\u2014'}</div><div class="sub">${Math.round(s.sellQty).toLocaleString()} EQTY</div></div>
+        <div class="pnl-stat ${sc2} highlight">${tip('Avg Sell \u2212 Avg Buy \u2014 core MM metric')}<div class="label">Spread Capture</div><div class="value">${s.spread>=0?'+':''}${s.spread.toFixed(6)}</div><div class="sub">${s.spreadBps>=0?'+':''}${s.spreadBps.toFixed(1)} bps</div></div>
+        <div class="pnl-stat ${cls(s.tradePnl)}">${tip('Sell revenue minus buy cost (pre-fee)')}<div class="label">Trade P&L</div><div class="value">${fmt(s.tradePnl)}</div><div class="sub">gross (pre-fee)</div></div>
+        <div class="pnl-stat negative">${tip('Total fees paid to the exchange')}<div class="label">Fees Paid</div><div class="value">-$${s.totalFees.toFixed(4)}</div><div class="sub">${s.totalVolume>0?(s.totalFees/s.totalVolume*100).toFixed(2):0}% effective</div></div>
+        <div class="pnl-stat ${cls(s.netPnl)} highlight">${tip('Trade P&L after all fees')}<div class="label">Net P&L</div><div class="value">${fmt(s.netPnl)}</div><div class="sub">after fees</div></div>
+        <div class="pnl-stat ${cls(tpnl)} highlight">${tip('Net P&L + unsold EQTY at mid price')}<div class="label">True P&L</div><div class="value">${fmt(tpnl)}</div><div class="sub" style="font-size:10px;">${mp>0?`inv ${s.netEqtyChange>=0?'+':''}${Math.round(s.netEqtyChange).toLocaleString()} @ ${mp.toFixed(6)}`:'load bot status first'}</div></div>
+        <div class="pnl-stat ${cls(ret)} highlight">${tip('Net P&L as % of portfolio value')}<div class="label">Return %</div><div class="value">${fp(ret)}</div><div class="sub">${pv>0?`on $${pv.toFixed(0)}`:'load balance first'}</div></div>
+        <div class="pnl-stat ${ic}">${tip('Net EQTY change: positive = accumulating')}<div class="label">Net EQTY \u0394</div><div class="value">${s.netEqtyChange>=0?'+':''}${Math.round(s.netEqtyChange).toLocaleString()}</div><div class="sub">${s.netEqtyChange>0?'\u2191 accumulating':s.netEqtyChange<0?'\u2193 distributing':'= neutral'}</div></div>
       </div>`;
     }
-    // ── HEATMAP — FIX: trade_timestamp is in ms, normalize to seconds ─────────
+    // ── HEATMAP — uses LOCAL calendar days (midnight→midnight) ───────────────
+    // Fixes: rolling 24h windows caused trades near midnight to land on wrong day
+    // e.g. a trade at 22:00 UTC on Feb 20 (= 23:00 CET) happened only 19h ago,
+    // so the old code put it on "Feb 21" and showed "Feb 21 23:00" — a future time.
     function heatColor(t){
       if(t<=0)return'#161b22';
       const C=[[13,40,24],[26,71,49],[35,134,54],[63,185,80],[126,231,135]];
@@ -1248,20 +1248,25 @@ async function loadGateioBalance() {
     function renderHeatmap(containerId,trades,days){
       const el=document.getElementById(containerId);if(!el)return;
       if(!trades.length){el.innerHTML='<div class="loading">No trades in this period.</div>';return;}
-      const nowSec=Date.now()/1000;
-      const matrix=Array.from({length:days},()=>new Array(24).fill(0));
-      const dayLabels=[];
+      // Build LOCAL calendar day buckets (midnight → midnight in browser timezone)
+      const dayMap={},dayLabels=[],matrix=[];
       for(let d=0;d<days;d++){
-        const dt=new Date((nowSec-(days-1-d)*86400)*1000);
+        const dt=new Date();
+        dt.setHours(0,0,0,0);           // local midnight today
+        dt.setDate(dt.getDate()-(days-1-d)); // go back N days
+        const key=`${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+        dayMap[key]=d;
         dayLabels.push(dt.toLocaleDateString([],{month:'short',day:'numeric'}));
+        matrix.push(new Array(24).fill(0));
       }
+      // Assign each trade to its LOCAL calendar day and LOCAL hour
       for(const t of trades){
         const tsRaw=t.trade_timestamp||t.timestamp||0;
-        // Normalize: trade_timestamp comes in ms (13-digit), convert to seconds
-        const tsSec=tsRaw>1e10?tsRaw/1000:tsRaw;
-        const dayIdx=days-1-Math.floor((nowSec-tsSec)/86400);
-        const hour=new Date(tsSec*1000).getHours();
-        if(dayIdx>=0&&dayIdx<days)matrix[dayIdx][hour]++;
+        const tsSec=tsRaw>1e10?tsRaw/1000:tsRaw; // ms → s if needed
+        const d=new Date(tsSec*1000);             // local Date object
+        const key=`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+        const dayIdx=dayMap[key];
+        if(dayIdx!==undefined)matrix[dayIdx][d.getHours()]++;
       }
       const maxVal=Math.max(1,...matrix.flat());
       const cw=days<=7?30:days<=14?26:22,ch=days<=7?28:days<=14?20:15;
