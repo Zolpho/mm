@@ -297,7 +297,39 @@
     [data-theme="dark"] .theme-toggle-btn:hover{background:#21262d;}
     [data-theme="dark"] .status-unknown{background:#3d444d;}
     [data-theme="dark"] .hm-label{color:#6e7681;}
-  </style>
+  
+    /* ── Docker Dashboard ── */
+    .ds-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:2px 0;}
+    .ds-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:500;border:1px solid transparent;}
+    .ds-chip.good{background:#f0fdf4;color:#15803d;border-color:#86efac;}
+    .ds-chip.down{background:#fef2f2;color:#dc2626;border-color:#fca5a5;}
+    .ds-chip.neutral{background:#f3f4f6;color:#374151;border-color:#e5e7eb;}
+    .ds-sep{color:#d1d5db;padding:0 4px;font-size:14px;}
+    .ds-muted{color:#9ca3af;font-size:11px;margin-left:3px;}
+    .ds-table-wrap{overflow-x:auto;}
+    .ds-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .ds-table th{text-align:left;padding:8px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;border-bottom:2px solid #e5e7eb;}
+    .ds-table td{padding:9px 12px;border-bottom:1px solid #f3f4f6;vertical-align:middle;}
+    .ds-table tbody tr:last-child td{border-bottom:none;}
+    .ds-table tbody tr:hover{background:#f9fafb;}
+    .ds-dot{font-size:10px;margin-right:2px;}
+    .ds-dot.good{color:#16a34a;}.ds-dot.down{color:#dc2626;}
+    .ds-image{font-size:11px;color:#6b7280;font-family:monospace;}
+    .ds-id{font-size:11px;color:#9ca3af;font-family:monospace;margin-left:8px;}
+    .ds-badge{font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:5px;text-transform:uppercase;letter-spacing:.04em;}
+    .ds-badge.disc{background:#dbeafe;color:#1d4ed8;}
+    [data-theme="dark"] .ds-chip.good{background:#0d2818;border-color:#238636;color:#3fb950;}
+    [data-theme="dark"] .ds-chip.down{background:#2d1515;border-color:#6d2626;color:#f85149;}
+    [data-theme="dark"] .ds-chip.neutral{background:#21262d;border-color:#30363d;color:#c9d1d9;}
+    [data-theme="dark"] .ds-sep{color:#30363d;}
+    [data-theme="dark"] .ds-muted{color:#6e7681;}
+    [data-theme="dark"] .ds-table th{color:#6e7681;border-bottom-color:#30363d;}
+    [data-theme="dark"] .ds-table td{border-bottom-color:#21262d;}
+    [data-theme="dark"] .ds-table tbody tr:hover{background:#1c2128;}
+    [data-theme="dark"] .ds-dot.good{color:#3fb950;}[data-theme="dark"] .ds-dot.down{color:#f85149;}
+    [data-theme="dark"] .ds-image{color:#8b949e;}[data-theme="dark"] .ds-id{color:#6e7681;}
+    [data-theme="dark"] .ds-badge.disc{background:#1c2947;color:#79c0ff;}
+    </style>
   <script>(function(){var t=localStorage.getItem("theme")||"dark";document.documentElement.setAttribute("data-theme",t);})();</script>
 </head>
 <body>
@@ -323,28 +355,15 @@
 
     <!-- DOCKER TAB -->
     <section id="tab-docker" class="tab-content active">
-  <div class="card">
-    <div class="refresh-info">
-      Data loads fresh each time you click on tabs
+  <div class="card" style="padding:16px 25px;">
+    <div id="docker-statusbar" class="ds-bar">
+      <span style="color:#9ca3af;font-size:13px">Loading&hellip;</span>
     </div>
   </div>
-
   <div class="card">
-    <h2>Docker Service Status</h2>
-    <div id="docker-info" class="loading">Loading...</div>
+    <h2 style="margin-bottom:12px">Active Containers</h2>
+    <div id="docker-table" class="loading">Loading&hellip;</div>
   </div>
-
-  <!-- NEW MQTT STATUS CARD -->
-  <div class="card">
-    <h2>MQTT Status</h2>
-    <div id="mqtt-info" class="loading">Loading...</div>
-  </div>
-
-  <div class="card">
-    <h2>Active Containers</h2>
-    <div id="containers-info" class="loading">Loading...</div>
-  </div>
-
   <div class="last-update" id="last-update"></div>
 </section>
 
@@ -428,108 +447,78 @@
 
     // -------- Docker tab logic --------
     async function checkDockerStatus() {
-      const dockerInfo = document.getElementById('docker-info');
       try {
         const data = await fetchWithAuth('/docker/running');
-        const isRunning = data===true||data==='true'||(typeof data==='object'&&(data.running||data.status==='running'));
-        window.dockerRunning = isRunning;
-        syncChips(['chip-docker']);
-        dockerInfo.innerHTML=`<pre>${JSON.stringify(data,null,2)}</pre>`;
-      } catch(error) {
-        window.dockerRunning = false;
-        syncChips(['chip-docker']);
-        dockerInfo.innerHTML=`<div class="error">Error: ${error.message}</div>`;
-      }
+        window.dockerRunning = data===true||data==='true'||(typeof data==='object'&&(data.running||data.status==='running'));
+      } catch(e) { window.dockerRunning = false; }
+      syncChips(['chip-docker']);
     }
 
     async function fetchActiveContainers() {
       try {
         const data = await fetchWithAuth('/docker/active-containers');
-        const containersDiv = document.getElementById('containers-info');
+        window.containersData = Array.isArray(data) ? data : [];
+      } catch(e) { window.containersData = []; }
+    }
 
-        if (Array.isArray(data) && data.length > 0) {
-          containersDiv.innerHTML = `
-            <div class="container-list">
-              ${data.map(container => `
-                <div class="container-item">
-                  <div class="container-name">${container.name || container.Names || 'Unnamed Container'}</div>
-                  <div class="container-details">
-                    ${container.id || container.Id ? `ID: ${(container.id || container.Id).substring(0, 12)}` : ''}
-                    ${container.status || container.Status ? ` | Status: ${container.status || container.Status}` : ''}
-                    ${container.image || container.Image ? ` | Image: ${container.image || container.Image}` : ''}
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-            <div style="margin-top: 15px; padding: 10px; background: #f0fdf4; border-radius: 6px; color: #15803d; font-size: 14px;">
-              Total active containers: ${data.length}
-            </div>
-          `;
-        } else if (Array.isArray(data) && data.length === 0) {
-          containersDiv.innerHTML = '<div style="color: #6b7280; text-align: center;">No active containers found</div>';
-        } else {
-          containersDiv.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
-        }
-      } catch (error) {
-        document.getElementById('containers-info').innerHTML =
-          `<div class="error">Error: ${error.message}</div>`;
+    function renderDockerDashboard() {
+      const running    = window.dockerRunning ?? null;
+      const mqtt       = window.mqttData || { connected:false, activeBots:[], discoveredBots:[], broker:'–' };
+      const containers = window.containersData || [];
+
+      // ── Status bar ──
+      const bar = document.getElementById('docker-statusbar');
+      if (bar) {
+        const dc = running===null
+          ? `<span class="ds-chip neutral">🐳 <strong>Docker</strong> <span class="ds-muted">checking…</span></span>`
+          : `<span class="ds-chip ${running?'good':'down'}"><span class="ds-dot ${running?'good':'down'}">●</span> <strong>Docker</strong> ${running?'Running':'Stopped'}</span>`;
+        const mc = `<span class="ds-chip ${mqtt.connected?'good':'down'}"><span class="ds-dot ${mqtt.connected?'good':'down'}">●</span> <strong>MQTT</strong> ${mqtt.connected?'Connected':'Disconnected'}<span class="ds-muted">${mqtt.connected&&mqtt.broker!=='–'?' · '+mqtt.broker:''}</span></span>`;
+        const bc = `<span class="ds-chip ${mqtt.discoveredBots.length?'good':'neutral'}">🤖 <strong>${mqtt.discoveredBots.length}</strong> discovered bot${mqtt.discoveredBots.length!==1?'s':''}</span>`;
+        const cc = `<span class="ds-chip neutral">📦 <strong>${containers.length}</strong> container${containers.length!==1?'s':''}</span>`;
+        bar.innerHTML = [dc,'<span class="ds-sep">·</span>',mc,'<span class="ds-sep">·</span>',bc,'<span class="ds-sep">·</span>',cc].join(' ');
+      }
+
+      // ── Containers table ──
+      const tbl = document.getElementById('docker-table');
+      if (!tbl) return;
+      if (!containers.length) {
+        tbl.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:20px">No containers found</div>';
+        return;
+      }
+      const rows = containers.map(c => {
+        const name   = c.name || c.Names || 'Unnamed';
+        const status = c.status || c.Status || '–';
+        const image  = (c.image || c.Image || '–').replace('hummingbot/','');
+        const id     = (c.id || c.Id || '').substring(0,12);
+        const up     = /up|running/i.test(status);
+        const isDisc = mqtt.discoveredBots.some(b => b===name || name.includes(b.substring(0,8)));
+        const badge  = isDisc ? '<span class="ds-badge disc">disc</span>' : '';
+        return `<tr>
+          <td><span style="font-weight:600">${name}</span>${badge}${id?`<span class="ds-id">${id}</span>`:''}</td>
+          <td><span class="ds-dot ${up?'good':'down'}">●</span> ${status}</td>
+          <td class="ds-image">${image}</td>
+        </tr>`;
+      }).join('');
+      tbl.innerHTML = `<div class="ds-table-wrap"><table class="ds-table">
+        <thead><tr><th>Container</th><th>Status</th><th>Image</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+    }
+
+async function fetchMQTTStatus() {
+      try {
+        const raw = await fetchWithAuth('/bot-orchestration/mqtt');
+        const d = raw?.data || raw;
+        window.mqttData = {
+          connected:      d.mqtt_connected===true || d.client_state==='connected',
+          activeBots:     d.active_bots     || [],
+          discoveredBots: d.discovered_bots || [],
+          broker:         (d.broker_host||'–') + (d.broker_port ? ':'+d.broker_port : '')
+        };
+      } catch(e) {
+        window.mqttData = { connected:false, activeBots:[], discoveredBots:[], broker:'–' };
       }
     }
-async function fetchMQTTStatus() {
-  try {
-    const data = await fetchWithAuth('/bot-orchestration/mqtt');
-    const mqttDiv = document.getElementById('mqtt-info');
-
-    // Extract data
-    const mqttData = data?.data || data;
-    const connected = mqttData.mqtt_connected === true || mqttData.client_state === 'connected';
-    const activeBots = mqttData.active_bots || [];
-    const discoveredBots = mqttData.discovered_bots || [];
-    const brokerHost = mqttData.broker_host || '-';
-    const brokerPort = mqttData.broker_port || '-';
-
-    const statusBadge = connected
-      ? '<span class="status-badge status-running">✓ Connected</span>'
-      : '<span class="status-badge status-stopped">✗ Disconnected</span>';
-
-    mqttDiv.innerHTML = `
-      <div style="margin-bottom: 15px;">
-        <strong>Connection Status:</strong> ${statusBadge}
-      </div>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
-        <div>
-          <strong>Broker:</strong> ${brokerHost}:${brokerPort}
-        </div>
-        <div>
-          <strong>Active Bots:</strong> ${activeBots.length}
-        </div>
-        <div>
-          <strong>Discovered Bots:</strong> ${discoveredBots.length}
-        </div>
-      </div>
-      ${activeBots.length > 0 ? `
-        <div style="background: #f0fdf4; padding: 10px; border-radius: 6px; margin-top: 10px;">
-          <strong style="color: #15803d;">Active Bots:</strong>
-          <div style="margin-top: 5px; color: #166534; font-size: 13px; font-family: monospace;">
-            ${activeBots.map(bot => `<div>• ${bot}</div>`).join('')}
-          </div>
-        </div>
-      ` : ''}
-      ${discoveredBots.length > 0 ? `
-        <div style="background: #eff6ff; padding: 10px; border-radius: 6px; margin-top: 10px;">
-          <strong style="color: #1e40af;">Discovered Bots:</strong>
-          <div style="margin-top: 5px; color: #1e3a8a; font-size: 13px; font-family: monospace;">
-            ${discoveredBots.map(bot => `<div>• ${bot}</div>`).join('')}
-          </div>
-        </div>
-      ` : ''}
-    `;
-
-  } catch (error) {
-    document.getElementById('mqtt-info').innerHTML =
-      `<div class="error">Error: ${error.message}</div>`;
-  }
-}
 
 
     function updateTimestamp() {
@@ -539,11 +528,8 @@ async function fetchMQTTStatus() {
     }
 
     async function refreshAll() {
-      await Promise.all([
-        checkDockerStatus(),
-        fetchActiveContainers(),
-	fetchMQTTStatus()         // NEW
-      ]);
+      await Promise.all([ checkDockerStatus(), fetchActiveContainers(), fetchMQTTStatus() ]);
+      renderDockerDashboard();
       updateTimestamp();
     }
 
@@ -1407,3 +1393,4 @@ async function loadGateioBalance() {
   </div>
 </body>
 </html>
+
