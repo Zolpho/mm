@@ -214,7 +214,6 @@
     .pnl-stat.positive{border-color:#86efac;background:#f0fdf4;} .pnl-stat.positive .value{color:#15803d;}
     .pnl-stat.negative{border-color:#fca5a5;background:#fef2f2;} .pnl-stat.negative .value{color:#dc2626;}
     .pnl-stat.neutral .value{color:#1e40af;} .pnl-stat.highlight{border-width:2px;}
-    /* Tooltip — works on both hover (desktop) and tap (mobile) */
     .stat-help{position:absolute;top:5px;right:7px;width:20px;height:20px;border-radius:50%;background:#d1d5db;color:#6b7280;font-size:11px;font-weight:700;line-height:20px;text-align:center;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
     .stat-help:hover .stat-tip,.stat-help.open .stat-tip{display:block;}
     .stat-tip{display:none;position:absolute;bottom:130%;right:0;background:#1f2937;color:#f9fafb;font-size:11px;font-weight:400;line-height:1.5;padding:8px 11px;border-radius:6px;width:200px;text-align:left;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,0.4);white-space:normal;pointer-events:none;}
@@ -1163,14 +1162,14 @@ async function loadGateioBalance() {
 }
 
 
-    // ── UPTIME ──────────────────────────────────────────────────────────────
+    // ── UPTIME ───────────────────────────────────────────────────────────────
     const UPTIME_CONFIG={kucoin:{start:new Date('2026-02-01T00:00:00')},gateio:{start:null}};
     function _dk(ex){return`uptime_down_s_${ex}`;}
     function trackDowntime(ex,ok){if(!ok){const k=_dk(ex);localStorage.setItem(k,parseInt(localStorage.getItem(k)||'0')+Math.round(REFRESH_INTERVAL/1000));}}
     function getUptimeStats(ex){
       const cfg=UPTIME_CONFIG[ex];if(!cfg?.start)return null;
       const tot=(Date.now()-cfg.start.getTime())/1000,dn=parseInt(localStorage.getItem(_dk(ex))||'0'),up=Math.max(0,tot-dn);
-      return{d:Math.floor(up/86400),h:Math.floor((up%86400)/3600),m:Math.floor((up%3600)/60),pct:(up/tot)*100};
+      return{d:Math.floor(up/86400),h:Math.floor((up%86400)/3600),pct:(up/tot)*100};
     }
     function _hideAll(){['chip-docker','chip-kucoin','chip-gateio'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.visibility='hidden';});}
     function renderUptimeBar(ex,running){
@@ -1178,7 +1177,8 @@ async function loadGateioBalance() {
       const s=getUptimeStats(ex),rc=running?'good':'down',ri=running?'&#9679;':'&#9675;',rl=running?'Running':'Stopped';
       const chip=document.getElementById(ex==='kucoin'?'chip-kucoin':'chip-gateio');if(!chip)return;
       chip.className=`uptime-chip ${rc}`;
-      let html=`${ri} <strong>${ex==='kucoin'?'KuCoin':'Gate.io'} ${rl}</strong>`;
+      // FIX: only show Running/Stopped — no exchange name prefix (too long on mobile)
+      let html=`${ri} <strong>${rl}</strong>`;
       if(s)html+=`&nbsp;&nbsp;&#9201;&nbsp;<span id="uptime-timer-${ex}">${s.d}d ${s.h}h</span>&nbsp;&nbsp;${s.pct.toFixed(1)}%`;
       chip.innerHTML=html;chip.style.visibility='visible';
     }
@@ -1190,8 +1190,9 @@ async function loadGateioBalance() {
       _hideAll();
       const kc=document.getElementById('chip-kucoin'),gc=document.getElementById('chip-gateio');
       const kr=window.kucoinBotRunning??false,gr=window.gateioBotRunning??false;
-      if(kc){kc.className=`uptime-chip ${kr?'good':'down'}`;kc.innerHTML=`${kr?'&#9679;':'&#9675;'} <strong>KuCoin ${kr?'Running':'Stopped'}</strong>`;kc.style.visibility='visible';}
-      if(gc){gc.className=`uptime-chip ${gr?'good':'down'}`;gc.innerHTML=`${gr?'&#9679;':'&#9675;'} <strong>Gate.io ${gr?'Running':'Stopped'}</strong>`;gc.style.visibility='visible';}
+      // FIX: no exchange name — just Running/Stopped
+      if(kc){kc.className=`uptime-chip ${kr?'good':'down'}`;kc.innerHTML=`${kr?'&#9679;':'&#9675;'} <strong>${kr?'Running':'Stopped'}</strong>`;kc.style.visibility='visible';}
+      if(gc){gc.className=`uptime-chip ${gr?'good':'down'}`;gc.innerHTML=`${gr?'&#9679;':'&#9675;'} <strong>${gr?'Running':'Stopped'}</strong>`;gc.style.visibility='visible';}
     }
     // ── THEME ────────────────────────────────────────────────────────────────
     function toggleTheme(){
@@ -1203,7 +1204,6 @@ async function loadGateioBalance() {
       const s=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',s);
       const b=document.getElementById('theme-toggle');if(b)b.textContent=s==='dark'?'\u2600\uFE0F':'\uD83C\uDF19';
     });
-    // Close any open stat-help tooltips when tapping elsewhere
     document.addEventListener('click',()=>document.querySelectorAll('.stat-help.open').forEach(el=>el.classList.remove('open')));
     // ── P&L ──────────────────────────────────────────────────────────────────
     function computePnlStats(trades){
@@ -1228,7 +1228,6 @@ async function loadGateioBalance() {
       const cls=n=>n===null?'neutral':n>=0?'positive':'negative';
       const ic=s.netEqtyChange>0?'positive':s.netEqtyChange<0?'negative':'neutral';
       const sc2=s.spread>0?'positive':s.spread<0?'negative':'neutral';
-      // FIX 1: tooltip tappable on mobile — onclick toggles .open class
       const tip=t=>`<span class="stat-help" onclick="event.stopPropagation();this.classList.toggle('open')">?<span class="stat-tip">${t}</span></span>`;
       el.innerHTML=`<div class="pnl-grid">
         <div class="pnl-stat neutral">${tip('Number of executed trades (B\u202f=\u202fbuys, S\u202f=\u202fsells)')}<div class="label">Trades</div><div class="value">${s.tradeCount}</div><div class="sub">${s.buyCount}B / ${s.sellCount}S</div></div>
@@ -1245,7 +1244,7 @@ async function loadGateioBalance() {
         <div class="pnl-stat ${ic}">${tip('Net EQTY change: positive = accumulating')}<div class="label">Net EQTY \u0394</div><div class="value">${s.netEqtyChange>=0?'+':''}${Math.round(s.netEqtyChange).toLocaleString()}</div><div class="sub">${s.netEqtyChange>0?'\u2191 accumulating':s.netEqtyChange<0?'\u2193 distributing':'= neutral'}</div></div>
       </div>`;
     }
-    // ── HEATMAP — FIX 2: click cell to see trades ────────────────────────────
+    // ── HEATMAP ───────────────────────────────────────────────────────────────
     function heatColor(t){
       if(t<=0)return'#161b22';
       const C=[[13,40,24],[26,71,49],[35,134,54],[63,185,80],[126,231,135]];
@@ -1255,10 +1254,7 @@ async function loadGateioBalance() {
     function renderHeatmap(containerId,trades,days){
       const el=document.getElementById(containerId);if(!el)return;
       if(!trades.length){el.innerHTML='<div class="loading">No trades in this period.</div>';return;}
-      // Store raw trades for cell-click drill-down
-      window._hmTrades=window._hmTrades||{};
-      window._hmTrades[containerId]=trades;
-      // Build LOCAL calendar day buckets (midnight→midnight in browser timezone)
+      window._hmTrades=window._hmTrades||{};window._hmTrades[containerId]=trades;
       const dayMap={},dayLabels=[],matrix=[];
       for(let d=0;d<days;d++){
         const dt=new Date();dt.setHours(0,0,0,0);dt.setDate(dt.getDate()-(days-1-d));
@@ -1273,7 +1269,6 @@ async function loadGateioBalance() {
       }
       const maxVal=Math.max(1,...matrix.flat());
       const cw=days<=7?30:days<=14?26:22,ch=days<=7?28:days<=14?20:15;
-      // Store dayMap keys in order for the click handler
       const dayKeys=Object.keys(dayMap).sort((a,b)=>dayMap[a]-dayMap[b]);
       let html=`<div class="hm-wrap"><div style="display:inline-block;">`;
       html+=`<div class="hm-row"><div class="hm-label"></div>`;
@@ -1282,8 +1277,7 @@ async function loadGateioBalance() {
       for(let d=0;d<days;d++){
         html+=`<div class="hm-row"><div class="hm-label">${dayLabels[d]}</div>`;
         for(let h=0;h<24;h++){
-          const v=matrix[d][h],t2=v/maxVal;
-          const clickable=v>0;
+          const v=matrix[d][h],t2=v/maxVal,clickable=v>0;
           const onclick=clickable?` onclick="hmCellClick('${containerId}','${dayKeys[d]}',${h},this)"` :'';
           html+=`<div class="hm-cell${clickable?' has-trades':''}" style="width:${cw-2}px;height:${ch}px;margin-right:2px;background:${heatColor(t2)};"${onclick} title="${dayLabels[d]} ${h}:00\u202f\u2014\u202f${v} trade${v!==1?'s':''}"></div>`;
         }
@@ -1293,20 +1287,17 @@ async function loadGateioBalance() {
       html+=`<span style="font-size:10px;color:#6e7681;">0</span>`;
       for(let i=0;i<=8;i++)html+=`<div style="width:14px;height:10px;border-radius:2px;background:${heatColor(i/8)};"></div>`;
       html+=`<span style="font-size:10px;color:#6e7681;">max (${maxVal}/hr) · tap a cell to see trades</span></div>`;
-      html+=`</div></div>`;
-      el.innerHTML=html;
+      html+=`</div></div>`;el.innerHTML=html;
     }
     function hmCellClick(cid,dayKey,hour,cellEl){
-      // Deselect previously selected cell
       document.querySelectorAll(`#${cid} .hm-cell.selected`).forEach(el=>el.classList.remove('selected'));
       const detailEl=document.getElementById(cid+'-detail');if(!detailEl)return;
-      // If same cell clicked again → close panel
       if(cellEl.dataset.open==='1'){cellEl.dataset.open='';detailEl.innerHTML='';return;}
       cellEl.classList.add('selected');cellEl.dataset.open='1';
       const trades=(window._hmTrades?.[cid]||[]).filter(t=>{
         const tsRaw=t.trade_timestamp||t.timestamp||0,tsSec=tsRaw>1e10?tsRaw/1000:tsRaw;
         const d=new Date(tsSec*1000);
-        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`===dayKey&&d.getHours()===hour;
+        return`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`===dayKey&&d.getHours()===hour;
       }).sort((a,b)=>(a.trade_timestamp||0)-(b.trade_timestamp||0));
       if(!trades.length){detailEl.innerHTML='';return;}
       const dayLabel=new Date(trades[0].trade_timestamp>1e10?trades[0].trade_timestamp:trades[0].trade_timestamp*1000).toLocaleDateString([],{month:'short',day:'numeric'});
@@ -1315,12 +1306,11 @@ async function loadGateioBalance() {
         const tsRaw=t.trade_timestamp||0,tsSec=tsRaw>1e10?tsRaw/1000:tsRaw;
         const time=new Date(tsSec*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
         const qty=parseFloat(String(t.quantity||'0').replace(/\.$/,''));
-        const price=parseFloat(t.price||0);
-        const val=(qty*price).toFixed(4);
+        const price=parseFloat(t.price||0),val=(qty*price).toFixed(4);
         const isBuy=(t.trade_type||'').toUpperCase()==='BUY';
         rows+=`<tr><td>${time}</td><td><span class="pill-${isBuy?'buy':'sell'}" style="padding:1px 7px;border-radius:999px;font-size:11px;font-weight:700;">${isBuy?'BUY':'SELL'}</span></td><td>${price}</td><td>${Math.round(qty).toLocaleString()}</td><td>$${val}</td></tr>`;
       }
-      detailEl.innerHTML=`<div class="hm-detail"><div class="hm-detail-header"><span>&#128336; ${dayLabel} &nbsp;${hour}:00\u202f\u2014\u202f${(hour+1)%24}:00 &nbsp;&middot;&nbsp; ${trades.length} trade${trades.length>1?'s':''}</span><span class="hm-detail-close" onclick="document.getElementById('${cid}-detail').innerHTML='';document.querySelectorAll('#${cid} .hm-cell.selected').forEach(e=>{e.classList.remove('selected');e.dataset.open='';})">&#x2715;</span></div><div style="overflow-x:auto;"><table><thead><tr><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Time</th><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Side</th><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Price</th><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Qty (EQTY)</th><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Value</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      detailEl.innerHTML=`<div class="hm-detail"><div class="hm-detail-header"><span>&#128336; ${dayLabel} &nbsp;${hour}:00\u202f\u2014\u202f${(hour+1)%24}:00 &nbsp;&middot;&nbsp; ${trades.length} trade${trades.length>1?'s':''}</span><span class="hm-detail-close" onclick="document.getElementById('${cid}-detail').innerHTML='';document.querySelectorAll('#${cid} .hm-cell.selected').forEach(e=>{e.classList.remove('selected');e.dataset.open='';})">&#x2715;</span></div><div style="overflow-x:auto;"><table><thead><tr><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Time</th><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Side</th><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Price</th><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Qty</th><th style="padding:5px 10px;text-align:left;font-size:11px;color:#6b7280;">Value</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
     }
     // ── DATA LOADERS ─────────────────────────────────────────────────────────
     async function loadKucoinData(days=1){
