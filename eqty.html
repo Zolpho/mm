@@ -228,7 +228,7 @@
     .days-selector{display:inline-flex;gap:5px;float:right;}
     .days-btn{padding:3px 12px;border-radius:999px;border:1px solid #d1d5db;background:white;font-size:12px;font-weight:600;color:#374151;cursor:pointer;transition:all .15s;}
     .days-btn:hover{background:#f3f4f6;} .days-btn.active{background:#4f46e5;color:white;border-color:#4f46e5;}
-    .uptime-chip{display:inline-flex;align-items:center;gap:5px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:999px;padding:4px 12px;font-size:13px;color:#374151;}
+    .uptime-chip{display:inline-flex;align-items:center;gap:5px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:999px;padding:4px 12px;font-size:12px;color:#374151;}
     .uptime-chip.good{background:#f0fdf4;border-color:#86efac;color:#15803d;}
     .uptime-chip.warn{background:#fffbeb;border-color:#fcd34d;color:#92400e;}
     .uptime-chip.down{background:#fef2f2;border-color:#fca5a5;color:#dc2626;}
@@ -1161,18 +1161,33 @@ async function loadGateioBalance() {
       const tot=(Date.now()-cfg.start.getTime())/1000,dn=parseInt(localStorage.getItem(_dk(ex))||'0'),up=Math.max(0,tot-dn);
       return{d:Math.floor(up/86400),h:Math.floor((up%86400)/3600),m:Math.floor((up%3600)/60),pct:(up/tot)*100};
     }
+    // ── CHIPS — aligned under their tab button ───────────────────────────────
+    function _allChips(){return['chip-docker','chip-kucoin','chip-gateio'].map(id=>document.getElementById(id));}
+    function _hideAll(){_allChips().forEach(el=>{if(el)el.style.visibility='hidden';});}
     function renderUptimeBar(ex,running){
-      const s=getUptimeStats(ex),rc=running?'good':'down',ri=running?'&#9679;':'&#9675;',rl=running?'Running':'Stopped';
-      const dc=document.getElementById('chip-docker'),kc=document.getElementById('chip-kucoin'),gc=document.getElementById('chip-gateio');
-      if(dc){dc.className=`uptime-chip ${rc}`;dc.innerHTML=`${ri} <strong>${rl}</strong>`;dc.style.visibility='visible';}
-      if(!s){if(kc)kc.style.visibility='hidden';if(gc){gc.className='uptime-chip';gc.innerHTML=`&#128338; <strong>Not started</strong>`;gc.style.visibility='visible';}return;}
-      const pc=s.pct>=95?'good':s.pct>=90?'warn':'down';
-      if(kc){kc.className='uptime-chip';kc.innerHTML=`&#9201; <strong id="uptime-timer-${ex}">${s.d}d ${s.h}h ${s.m}m</strong>`;kc.style.visibility='visible';}
-      if(gc){gc.className=`uptime-chip ${pc}`;gc.innerHTML=`&#128200; <strong>${s.pct.toFixed(2)}%</strong>&nbsp;uptime`;gc.style.visibility='visible';}
+      _hideAll();
+      const s=getUptimeStats(ex);
+      const rc=running?'good':'down',ri=running?'&#9679;':'&#9675;',rl=running?'Running':'Stopped';
+      const label=ex==='kucoin'?'KuCoin':'Gate.io';
+      const chipId=ex==='kucoin'?'chip-kucoin':'chip-gateio';
+      const chip=document.getElementById(chipId);if(!chip)return;
+      chip.className=`uptime-chip ${rc}`;
+      let html=`${ri} <strong>${label} ${rl}</strong>`;
+      if(s)html+=`&nbsp;&nbsp;&#9201;&nbsp;<span id="uptime-timer-${ex}">${s.d}d ${s.h}h</span>&nbsp;&nbsp;${s.pct.toFixed(1)}%`;
+      else if(!s&&ex==='gateio')html+=`&nbsp;&#128338; Not started`;
+      chip.innerHTML=html;chip.style.visibility='visible';
     }
     function startUptimeTick(ex){
       if(window[`_tick_${ex}`])return;
-      window[`_tick_${ex}`]=setInterval(()=>{const s=getUptimeStats(ex),el=document.getElementById(`uptime-timer-${ex}`);if(s&&el)el.textContent=`${s.d}d ${s.h}h ${s.m}m`;},60000);
+      window[`_tick_${ex}`]=setInterval(()=>{const s=getUptimeStats(ex),el=document.getElementById(`uptime-timer-${ex}`);if(s&&el)el.textContent=`${s.d}d ${s.h}h`;},60000);
+    }
+    // ── ACTIVITY CHIPS — show both statuses under KuCoin + Gate.io ───────────
+    function renderActivityChips(){
+      _hideAll();
+      const kc=document.getElementById('chip-kucoin'),gc=document.getElementById('chip-gateio');
+      const kr=window.kucoinBotRunning??false,gr=window.gateioBotRunning??false;
+      if(kc){kc.className=`uptime-chip ${kr?'good':'down'}`;kc.innerHTML=`${kr?'&#9679;':'&#9675;'} <strong>KuCoin ${kr?'Running':'Stopped'}</strong>`;kc.style.visibility='visible';}
+      if(gc){gc.className=`uptime-chip ${gr?'good':'down'}`;gc.innerHTML=`${gr?'&#9679;':'&#9675;'} <strong>Gate.io ${gr?'Running':'Stopped'}</strong>`;gc.style.visibility='visible';}
     }
     // ── THEME ────────────────────────────────────────────────────────────────
     function toggleTheme(){
@@ -1184,14 +1199,6 @@ async function loadGateioBalance() {
       const s=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',s);
       const b=document.getElementById('theme-toggle');if(b)b.textContent=s==='dark'?'\u2600\uFE0F':'\uD83C\uDF19';
     });
-    // ── ACTIVITY CHIPS ───────────────────────────────────────────────────────
-    function renderActivityChips(){
-      const dc=document.getElementById('chip-docker'),kc=document.getElementById('chip-kucoin'),gc=document.getElementById('chip-gateio');
-      const kr=window.kucoinBotRunning??false,gr=window.gateioBotRunning??false;
-      if(dc){dc.className=`uptime-chip ${kr?'good':'down'}`;dc.innerHTML=`${kr?'&#9679;':'&#9675;'} <strong>KuCoin ${kr?'Running':'Stopped'}</strong>`;dc.style.visibility='visible';}
-      if(kc){kc.className=`uptime-chip ${gr?'good':'down'}`;kc.innerHTML=`${gr?'&#9679;':'&#9675;'} <strong>Gate.io ${gr?'Running':'Stopped'}</strong>`;kc.style.visibility='visible';}
-      if(gc)gc.style.visibility='hidden';
-    }
     // ── P&L STATS ────────────────────────────────────────────────────────────
     function computePnlStats(trades){
       let bv=0,bq=0,bc=0,sv=0,sq=0,sc=0,fees=0;
@@ -1231,7 +1238,7 @@ async function loadGateioBalance() {
         <div class="pnl-stat ${ic}">${tip('Net change in EQTY holdings: positive = accumulating, negative = distributing')}<div class="label">Net EQTY \u0394</div><div class="value">${s.netEqtyChange>=0?'+':''}${Math.round(s.netEqtyChange).toLocaleString()}</div><div class="sub">${s.netEqtyChange>0?'\u2191 accumulating':s.netEqtyChange<0?'\u2193 distributing':'= neutral'}</div></div>
       </div>`;
     }
-    // ── HEATMAP ──────────────────────────────────────────────────────────────
+    // ── HEATMAP — FIX: trade_timestamp is in ms, normalize to seconds ─────────
     function heatColor(t){
       if(t<=0)return'#161b22';
       const C=[[13,40,24],[26,71,49],[35,134,54],[63,185,80],[126,231,135]];
@@ -1241,17 +1248,19 @@ async function loadGateioBalance() {
     function renderHeatmap(containerId,trades,days){
       const el=document.getElementById(containerId);if(!el)return;
       if(!trades.length){el.innerHTML='<div class="loading">No trades in this period.</div>';return;}
-      const now=Date.now()/1000;
+      const nowSec=Date.now()/1000;
       const matrix=Array.from({length:days},()=>new Array(24).fill(0));
       const dayLabels=[];
       for(let d=0;d<days;d++){
-        const dt=new Date((now-(days-1-d)*86400)*1000);
+        const dt=new Date((nowSec-(days-1-d)*86400)*1000);
         dayLabels.push(dt.toLocaleDateString([],{month:'short',day:'numeric'}));
       }
       for(const t of trades){
-        const ts=t.trade_timestamp||t.timestamp||0;
-        const dayIdx=days-1-Math.floor((now-ts)/86400);
-        const hour=new Date(ts*1000).getHours();
+        const tsRaw=t.trade_timestamp||t.timestamp||0;
+        // Normalize: trade_timestamp comes in ms (13-digit), convert to seconds
+        const tsSec=tsRaw>1e10?tsRaw/1000:tsRaw;
+        const dayIdx=days-1-Math.floor((nowSec-tsSec)/86400);
+        const hour=new Date(tsSec*1000).getHours();
         if(dayIdx>=0&&dayIdx<days)matrix[dayIdx][hour]++;
       }
       const maxVal=Math.max(1,...matrix.flat());
