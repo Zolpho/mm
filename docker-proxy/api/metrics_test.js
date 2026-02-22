@@ -109,8 +109,7 @@ async function getBtcMetrics(botId, connector, pair, accountName, portfolioKey, 
       buy_orders_count:    buyOrders,
       sell_orders_count:   sellOrders,
       bot_running:         statusData?.data?.recently_active ? 1 : 0,
-      recently_active:     statusData?.data?.recently_active ? 1 : 0,
-      _debug: { ...statusData?.data, general_logs: undefined }
+      recently_active:     statusData?.data?.recently_active ? 1 : 0
     };
   } catch (error) {
     console.error(`Error fetching BTC metrics:`, error);
