@@ -899,7 +899,7 @@
     const response = await fetch('https://docker-proxy-eta.vercel.app/api/metrics_test');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    window.testingBotRunning = data.kucoin?.bot_running === 1;
+    window.testingBotRunning = data.binance?.bot_running === 1;
     trackDowntime('testing', window.testingBotRunning);
     updateStatusBadge();
   } catch(e) {
