@@ -656,6 +656,10 @@
 
 
   function renderBotStatus(container, statusData, orderBookData, portfolioData, exchange, botId) {
+      if (!statusData && !orderBookData && !portfolioData) {
+        container.innerHTML = '<div style="color:#6b7280;text-align:center;padding:20px">Bot not yet running — start hbot-btc and refresh.</div>';
+        return;
+      }
       const logs = statusData?.data?.general_logs || [];
       const orders = parseBtcOrders(logs);
 
@@ -888,9 +892,13 @@ function updateStatusBadge() {
       fetchPortfolioState(['cex_mm_binance'], ['binance'])
     ]);
     await fetchBotRunningStatus();
-    renderBotStatus(container, statusData, orderBookData, portfolioData, 'binance', botId);
+    try {
+      renderBotStatus(container, statusData, orderBookData, portfolioData, 'binance', botId);
+    } catch(re) {
+      container.innerHTML = `<div class="error">Render error: ${re.message}</div>`;
+    }
   } catch(e) {
-    container.innerHTML = `<div class="error">Error: ${e.message}</div>`;
+    container.innerHTML = `<div class="error">API error: ${e.message}</div>`;
   }
 }
   async function loadTradeData(days = 1) {
@@ -922,7 +930,8 @@ function updateStatusBadge() {
 
   // ── Init ────────────────────────────────────────────────────────────────────
   async function init() {
-  await fetchBotRunningStatus();
+  // Fire everything in parallel — don't block on status badge
+  fetchBotRunningStatus();  // no await — background only
   loadBalance();
   loadBotStatus();
   loadTradeData(1);
