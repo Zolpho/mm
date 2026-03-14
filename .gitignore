@@ -1,3 +1,5 @@
 # Ignore configuration file with credentials
 .vercel
 .env*.local
+.wrangler/
+.env
