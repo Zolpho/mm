@@ -1,0 +1,9 @@
+name = "eqty-metrics"
+main = "worker-metrics-eqty.js"
+compatibility_date = "2025-01-01"
+account_id = "ed74935cdac662246601b5aa76cd2aca"
+
+[vars]
+# Secrets: wrangler secret put API_USERNAME --config wrangler-metrics-eqty.toml
+# Secrets: wrangler secret put API_PASSWORD --config wrangler-metrics-eqty.toml
+
