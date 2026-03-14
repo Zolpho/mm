@@ -1302,19 +1302,22 @@ async function loadGateioBalance() {
         dayMap[key].trades.push(t);
     }
 
-    const rows = Object.keys(dayMap).sort().map(key => {
+    const rows = Object.keys(dayMap).sort((a, b) => {
+        const [ay, am, ad] = a.split('-').map(Number);
+        const [by, bm, bd] = b.split('-').map(Number);
+        return new Date(ay, am, ad) - new Date(by, bm, bd); // oldest first → newest last
+    }).map(key => {
         const { label, trades: dt } = dayMap[key];
         const s = computePnlStats(dt);
         const spreadPct = s.avgBuyPrice > 0 ? (s.spread / s.avgBuyPrice * 100) : 0;
-        const spreadOk = spreadPct > 0;
+        const hasRoundTrip = spreadPct > 0.001;
         const ret = portfolioValue > 0 ? (s.netPnl / portfolioValue * 100) : null;
         const pos = 'color:#15803d;font-weight:700', neg = 'color:#dc2626;font-weight:700';
 
         return `<tr>
             <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb">${label}</td>
             <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb">
-                <span style="${spreadOk ? pos : neg}">${spreadPct >= 0 ? '+' : ''}${spreadPct.toFixed(2)}%</span>
-                ${spreadOk ? ' ✅' : ' ❌'}
+                <span style="${hasRoundTrip ? pos : 'color:#9ca3af'}">${hasRoundTrip ? '+' + spreadPct.toFixed(2) + '% ✓' : '—'}</span>
             </td>
             <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;${s.netEqtyChange > 0 ? pos : s.netEqtyChange < 0 ? neg : ''}">
                 ${s.netEqtyChange > 0 ? '+' : ''}${Math.round(s.netEqtyChange).toLocaleString()}
