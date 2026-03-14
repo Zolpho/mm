@@ -1,0 +1,8 @@
+name = "eqty-proxy"
+main = "worker-docker.js"
+compatibility_date = "2025-01-01"
+account_id = "ed74935cdac662246601b5aa76cd2aca"
+
+[vars]
+# Secrets: wrangler secret put API_USERNAME --config wrangler-eqty.toml
+# Secrets: wrangler secret put API_PASSWORD --config wrangler-eqty.toml
