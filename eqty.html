@@ -1197,10 +1197,19 @@ async function loadGateioBalance() {
       h.setAttribute('data-theme',n);localStorage.setItem('theme',n);
       const b=document.getElementById('theme-toggle');if(b)b.textContent=n==='dark'?'\u2600\uFE0F':'\uD83C\uDF19';
     }
-    document.addEventListener('DOMContentLoaded',()=>{
-      const s=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',s);
-      const b=document.getElementById('theme-toggle');if(b)b.textContent=s==='dark'?'\u2600\uFE0F':'\uD83C\uDF19';
+    document.addEventListener('DOMContentLoaded', () => {
+      const s = localStorage.getItem('theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', s);
+      const b = document.getElementById('theme-toggle');
+      if (b) b.textContent = s === 'dark' ? '☀️' : '🌙';
+
+      // Auto-load Docker tab on first visit
+      refreshAll();
+      updateTimestamp();
+      setInterval(refreshAll, 120000);
+      setInterval(updateTimestamp, 120000);
     });
+    
     document.addEventListener('click',()=>document.querySelectorAll('.stat-help.open').forEach(el=>el.classList.remove('open')));
     // ── P&L ──────────────────────────────────────────────────────────────────
     function computePnlStats(trades){
