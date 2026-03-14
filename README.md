@@ -5,31 +5,48 @@ Static dashboard hosted on GitHub Pages that shows:
 - Docker status and active containers
 - Balances for KuCoin and Gate.io
 - Hummingbot trades for KuCoin and Gate.io (via bot history endpoint)
+- **KuCoin BTC/USDT trading** with P&L summary, trade heatmap, and daily stats
 - **Bot status monitoring** with Markets, Assets, Orders, and inventory tracking
 - **Zabbix integration** for real-time alerting and metrics
 
-All sensitive credentials are handled **server-side** via a Vercel serverless proxy; the GitHub Pages site never sees or stores secrets.
+All sensitive credentials are handled **server-side** via Cloudflare Workers; the GitHub Pages site never sees or stores secrets.
 
 ---
 
 ## Architecture Overview
 
-- **Frontend**: `eqty.html` served by GitHub Pages from this repo.
-- **Proxy**: Vercel serverless function (`docker-proxy` project) that:
+- **Frontend**: `eqty.html` and `btc.html` served by GitHub Pages from this repo.
+- **Proxy Worker** (`eqty-proxy` / `btc-proxy`): Cloudflare Worker that:
   - Receives requests from the frontend
-  - Adds Docker/Hummingbot API credentials on the server side
+  - Adds Hummingbot API credentials on the server side
   - Forwards to `https://hummingbot-api.eqty.pro`
   - Returns JSON back to the browser
-- **Metrics API**: Serverless endpoint for Zabbix monitoring (`api/metrics.js`)
-- **Backend**: Hummingbot API and Docker host, only reachable via authenticated calls from the Vercel proxy.
+- **Metrics Worker** (`eqty-metrics`): Cloudflare Worker that checks bot running status via MQTT endpoint
+- **KuCoin Fills**: Served directly from the Hummingbot server via a custom FastAPI endpoint (`/kucoin/fills`)
+- **Backend**: Hummingbot API running on a non-US VPS, only reachable via authenticated calls from the Workers.
 
 Frontend calls look like:
 
 ```text
 GitHub Pages (browser)
-    → Vercel proxy (with secrets)
+    → Cloudflare Worker (with secrets)
         → https://hummingbot-api.eqty.pro/...
 ```
+
+KuCoin trade data flow:
+
+```text
+GitHub Pages (browser)
+    → Cloudflare Worker (eqty-proxy / btc-proxy)
+        → https://hummingbot-api.eqty.pro/kucoin/fills
+            → KuCoin API (from non-US server IP)
+```
+
+> **Why not call KuCoin directly from Cloudflare?**
+> KuCoin blocks US IPs (`error 400302`). Cloudflare Workers always exit from US nodes.
+> Routing through the Hummingbot server (hosted in EU) solves this.
+
+---
 
 ## Features
 
@@ -37,227 +54,265 @@ GitHub Pages (browser)
 Shows whether Docker is running (via `/docker/running`).
 
 Lists active containers with:
-- Name
-- Short ID
-- Status
-- Image
+- Name, Short ID, Status, Image
+- MQTT discovered bot badges
 
-Auto-refresh every 120 seconds (configurable).
+Auto-refresh every 120 seconds.
 
-### KuCoin Tab
+### KuCoin Tab (eqty.html)
 - **Bot Balance**: EQTY and USDT balances with UID
-- **Bot Status**: Real-time bot monitoring showing:
-  - Markets (exchange, pair, best bid/ask, mid price)
-  - Assets (total/available balances, current/target values, inventory range, order adjust %)
-  - Orders (recent orders with price, spread, amount)
-  - Bot ID badge for identification
-- **Bot Trades**: Fetches bot history from `/bot-orchestration/<KUCOIN_BOT_ID>/history`
-
-Displays trades in a table:
-- Time
-- Pair
-- Side (BUY/SELL pill)
-- Price
-- Quantity
-- Market
+- **Bot Status**: Real-time monitoring showing Markets, Assets, Orders, inventory range
+- **P&L Summary**: Trade stats with 1D/7D/30D selector
+- **Bot Trades**: Fetched via `/bot-orchestration/<BOT_ID>/history`
 
 ### Gate.io Tab
 Same layout as KuCoin tab with dedicated bot status monitoring and trade history.
 
+### BTC Page (btc.html)
+- **KuCoin Balance**: BTC and USDT balances
+- **Bot Status**: BTC/USDT bot monitoring
+- **P&L Summary**: Spread capture, fees, net P&L with 1D/7D/30D selector
+- **KuCoin Trades**: Real exchange fills via `/kucoin/fills` endpoint
+- **Activity Heatmap**: Trade activity by day/hour with daily summary table
+
+### Activity Tab
+Trade heatmap for KuCoin and Gate.io bots showing activity density across days and hours.
+
 ---
 
-## 1. Vercel Proxy Setup
+## 1. Cloudflare Workers Setup
 
-This repo assumes you have a separate Vercel project that acts as an authenticated proxy to `https://hummingbot-api.eqty.pro`.
-
-### 1.1 Create the proxy project
-
-On your machine:
+### 1.1 Prerequisites
 
 ```bash
-mkdir docker-proxy
-cd docker-proxy
-mkdir api
+npm install -g wrangler
+wrangler login
 ```
 
-Create `api/docker.js`:
+### 1.2 Worker Files
 
-```javascript
-// api/docker.js
-export default async function handler(req, res) {
-  // Support both origins during transition
-  const allowedOrigins = [
-    'https://zolpho.github.io',
-    'https://eqty-dao.github.io'
-  ];
+| File | Worker Name | Purpose |
+|---|---|---|
+| `worker-docker.js` | `btc-proxy` / `eqty-proxy` | Generic proxy to Hummingbot API |
+| `worker-metrics-btc.js` | `btc-metrics` | Bot running status for btc.html |
+| `worker-metrics-eqty.js` | `eqty-metrics` | Bot running status for eqty.html |
 
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', allowedOrigins[0]);
-  }
+### 1.3 Wrangler Config Files
 
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+**`wrangler-docker.toml`** — btc.html proxy:
+```toml
+name = "btc-proxy"
+main = "worker-docker.js"
+compatibility_date = "2025-01-01"
+account_id = "cloudflare_workers_account_id"
+```
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+**`wrangler-eqty.toml`** — eqty.html proxy:
+```toml
+name = "eqty-proxy"
+main = "worker-docker.js"
+compatibility_date = "2025-01-01"
+account_id = "cloudflare_workers_account_id"
+```
 
-  const { endpoint } = req.query;
+**`wrangler-metrics.toml`** — btc.html metrics:
+```toml
+name = "btc-metrics"
+main = "worker-metrics-btc.js"
+compatibility_date = "2025-01-01"
+account_id = "cloudflare_workers_account_id"
+```
 
-  if (!endpoint) {
-    return res.status(400).json({
-      error: 'Missing endpoint parameter',
-      usage: '?endpoint=/docker/running'
-    });
-  }
+**`wrangler-metrics-eqty.toml`** — eqty.html metrics:
+```toml
+name = "eqty-metrics"
+main = "worker-metrics-eqty.js"
+compatibility_date = "2025-01-01"
+account_id = "cloudflare_workers_account_id"
+```
 
-  const API_BASE = 'https://hummingbot-api.eqty.pro';
-  const API_USER = process.env.API_USERNAME;
-  const API_PASS = process.env.API_PASSWORD;
+### 1.4 Deploy All Workers
 
-  if (!API_USER || !API_PASS) {
-    return res.status(500).json({
-      error: 'API credentials not configured'
-    });
-  }
+```bash
+# btc.html proxy
+wrangler deploy --config wrangler-docker.toml
+wrangler secret put API_USERNAME --config wrangler-docker.toml
+wrangler secret put API_PASSWORD --config wrangler-docker.toml
 
-  const targetUrl = `${API_BASE}${endpoint}`;
+# eqty.html proxy
+wrangler deploy --config wrangler-eqty.toml
+wrangler secret put API_USERNAME --config wrangler-eqty.toml
+wrangler secret put API_PASSWORD --config wrangler-eqty.toml
 
-  try {
-    const fetchOptions = {
-      method: req.method,
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(`${API_USER}:${API_PASS}`).toString('base64'),
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
-    };
+# btc.html metrics
+wrangler deploy --config wrangler-metrics.toml
+wrangler secret put API_USERNAME --config wrangler-metrics.toml
+wrangler secret put API_PASSWORD --config wrangler-metrics.toml
 
-    if (req.method === 'POST' || req.method === 'PUT') {
-      fetchOptions.body = JSON.stringify(req.body);
+# eqty.html metrics
+wrangler deploy --config wrangler-metrics-eqty.toml
+wrangler secret put API_USERNAME --config wrangler-metrics-eqty.toml
+wrangler secret put API_PASSWORD --config wrangler-metrics-eqty.toml
+```
+
+> `API_USERNAME` and `API_PASSWORD` are the Hummingbot API basic auth credentials.
+
+### 1.5 Worker URLs
+
+| Worker | URL |
+|---|---|
+| `btc-proxy` | `https://btc-proxy.eqtydao.workers.dev` |
+| `eqty-proxy` | `https://eqty-proxy.eqtydao.workers.dev` |
+| `btc-metrics` | `https://btc-metrics.eqtydao.workers.dev` |
+| `eqty-metrics` | `https://eqty-metrics.eqtydao.workers.dev` |
+
+### 1.6 Test Workers
+
+```bash
+# Proxy — should return docker status
+curl "https://eqty-proxy.eqtydao.workers.dev?endpoint=docker%2Frunning"
+
+# Metrics — should return bot running status
+curl "https://eqty-metrics.eqtydao.workers.dev"
+# Expected: {"kucoin":{"botrunning":1},"gateio":{"botrunning":1}}
+```
+
+---
+
+## 2. KuCoin Fills Endpoint (Hummingbot Server)
+
+KuCoin API is called directly from the Hummingbot server (EU-based) to avoid US IP restrictions.
+
+### 2.1 custom_routes.py
+
+Place this file in `~/hummingbot-api/` on the server:
+
+```python
+import hmac, hashlib, base64, time, os
+import httpx
+from fastapi import APIRouter
+
+router = APIRouter()
+
+KUCOIN_KEY        = os.environ.get("KUCOIN_API_KEY", "")
+KUCOIN_SECRET     = os.environ.get("KUCOIN_API_SECRET", "")
+KUCOIN_PASSPHRASE = os.environ.get("KUCOIN_API_PASSPHRASE", "")
+
+@router.get("/kucoin/fills")
+async def get_fills(symbol: str = "BTC-USDT", days: int = 1):
+    if not KUCOIN_KEY:
+        return {"error": "KuCoin credentials not configured"}
+    now      = int(time.time() * 1000)
+    start_at = now - days * 86400 * 1000
+    endpoint = f"/api/v1/hf/fills?symbol={symbol}&startAt={start_at}&endAt={now}&limit=100"
+    ts       = str(now)
+    sign     = base64.b64encode(
+        hmac.new(KUCOIN_SECRET.encode(), (ts + "GET" + endpoint).encode(), hashlib.sha256).digest()
+    ).decode()
+    pphrase  = base64.b64encode(
+        hmac.new(KUCOIN_SECRET.encode(), KUCOIN_PASSPHRASE.encode(), hashlib.sha256).digest()
+    ).decode()
+    headers = {
+        "KC-API-KEY": KUCOIN_KEY, "KC-API-SIGN": sign,
+        "KC-API-PASSPHRASE": pphrase, "KC-API-TIMESTAMP": ts,
+        "KC-API-KEY-VERSION": "2"
     }
-
-    const response = await fetch(targetUrl, fetchOptions);
-    const data = await response.json();
-    return res.status(response.status).json(data);
-  } catch (error) {
-    console.error('Proxy error:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch from Docker/Hummingbot API',
-      message: error.message
-    });
-  }
-}
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"https://api.kucoin.com{endpoint}", headers=headers)
+        return r.json()
 ```
 
-Create `package.json`:
+### 2.2 Register in main.py
 
-```json
-{
-  "name": "docker-proxy",
-  "version": "1.0.0",
-  "description": "Serverless proxy for Docker & Hummingbot API",
-  "main": "api/docker.js",
-  "scripts": {
-    "dev": "vercel dev",
-    "deploy": "vercel --prod"
-  }
-}
+Add these two lines to `~/hummingbot-api/main.py`:
+
+```python
+# With other imports:
+from custom_routes import router as custom_router
+
+# With other app.include_router() calls:
+app.include_router(custom_router, dependencies=[Depends(auth_user)])
 ```
 
-Create `.gitignore`:
-
-```
-.vercel
-node_modules
-.env
-.env.local
-```
-
-Create a minimal `vercel.json`:
-
-```json
-{
-  "version": 2
-}
-```
-
-### 1.2 Deploy to Vercel
-
-Install and log in:
+### 2.3 Add KuCoin credentials to .env
 
 ```bash
-npm install -g vercel
-cd docker-proxy
-vercel login
-vercel
+echo "KUCOIN_API_KEY=your_key" >> ~/hummingbot-api/.env
+echo "KUCOIN_API_SECRET=your_secret" >> ~/hummingbot-api/.env
+echo "KUCOIN_API_PASSPHRASE=your_passphrase" >> ~/hummingbot-api/.env
 ```
 
-Follow prompts, then set environment variables:
+### 2.4 Mount files in docker-compose.yml
+
+```yaml
+hummingbot-api:
+  volumes:
+    - ~/hummingbot-api/custom_routes.py:/hummingbot-api/custom_routes.py:ro
+    - ~/hummingbot-api/main.py:/hummingbot-api/main.py:ro
+  environment:
+    - KUCOIN_API_KEY
+    - KUCOIN_API_SECRET
+    - KUCOIN_API_PASSPHRASE
+```
+
+### 2.5 Apply and test
 
 ```bash
-vercel env add API_USERNAME production
-vercel env add API_PASSWORD production
+cd ~/hummingbot-api
+docker compose up -d hummingbot-api
+sleep 5
+curl -u "user:pass" "http://localhost:8000/kucoin/fills?symbol=BTC-USDT&days=1"
 ```
-
-Deploy to production:
-
-```bash
-vercel --prod
-```
-
-You'll get an aliased URL like:
-
-```
-https://docker-proxy-eta.vercel.app
-```
-
-This is your `API_BASE` used by the frontend.
 
 ---
 
-## 2. Frontend (this repo)
+## 3. Frontend (this repo)
 
-### 2.1 Docker & Hummingbot dashboard
-
-The main page is `eqty.html` (`index.html` is a copy). It:
-
-Defines the proxy base:
+### 3.1 eqty.html — API base URLs
 
 ```javascript
-const API_BASE = 'https://docker-proxy-eta.vercel.app/api/docker';
-const REFRESH_INTERVAL = 120000; // 120 seconds
+const API_BASE = 'https://eqty-proxy.eqtydao.workers.dev';
 ```
-
-Uses a generic helper:
 
 ```javascript
-async function fetchWithAuth(endpoint) {
-  const url = `${API_BASE}?endpoint=${encodeURIComponent(endpoint)}`;
-  const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-  return await response.json();
-}
+// Inside fetchBotRunningStatus():
+const response = await fetch('https://eqty-metrics.eqtydao.workers.dev');
+window.kucoinBotRunning = data.kucoin?.botrunning === 1;
+window.gateioBotRunning = data.gateio?.botrunning === 1;
 ```
 
-Calls:
-- `fetchWithAuth('/docker/running')`
-- `fetchWithAuth('/docker/active-containers')`
-- `fetchWithAuth('/bot-orchestration/<KUCOIN_BOT_ID>/status')`
-- `fetchWithAuth('/bot-orchestration/<GATEIO_BOT_ID>/status')`
-- `fetchWithAuth('/bot-orchestration/<KUCOIN_BOT_ID>/history?days=1&verbose=false&timeout=30')`
-- `fetchWithAuth('/bot-orchestration/<GATEIO_BOT_ID>/history?days=1&verbose=false&timeout=30')`
+### 3.2 btc.html — API base URLs
 
-### 2.2 GitHub Pages deployment
+```javascript
+const API_BASE = 'https://btc-proxy.eqtydao.workers.dev';
+```
 
-A GitHub Action deploys this repo to the `gh-pages` branch using `peaceiris/actions-gh-pages`.
+```javascript
+// Inside fetchBotRunningStatus():
+const response = await fetch('https://btc-metrics.eqtydao.workers.dev');
+window.testingBotRunning = data.testing?.botrunning === 1;
+```
 
-Example workflow (`.github/workflows/deploy.yml`):
+KuCoin trade data:
+```javascript
+// loadTradeData and loadActivityBtc use:
+const data = await fetchWithAuth(`kucoin/fills?symbol=BTC-USDT&days=${days}`);
+const trades = (data?.data?.items || []).map(f => ({
+  trade_timestamp: f.createdAt,
+  trade_type:      f.side.toUpperCase(),
+  price:           f.price,
+  quantity:        f.size,
+  symbol:          f.symbol,
+  market:          'kucoin',
+  raw_json:        { trade_fee: { percent: parseFloat(f.feeRate) || 0.001 } }
+}));
+```
+
+### 3.3 GitHub Pages deployment
+
+A GitHub Action deploys this repo to the `gh-pages` branch.
+
+`.github/workflows/deploy.yml`:
 
 ```yaml
 name: Deploy to GitHub Pages
@@ -273,440 +328,97 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - uses: actions/checkout@v4
+      - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./
 ```
 
 Configure GitHub Pages:
-- Repo → Settings → Pages
-- Source: `gh-pages` branch, root folder
-
-Resulting URL:
-`https://username.github.io/mm/eqty.html` or simply `https://username.github.io/mm/` (because of `index.html`)
+- Repo → Settings → Pages → Source: `gh-pages` branch
 
 ---
 
-## 3. Monitoring Setup (Zabbix Integration)
+## 4. Monitoring Setup (Zabbix Integration)
 
 Monitor your market maker bots in real-time with Zabbix for automated alerting and metrics tracking.
 
-### 3.1 Metrics API Endpoint
+### 4.1 Metrics Worker
 
-Create `api/metrics.js` in your `docker-proxy` folder for Zabbix to consume:
+The `eqty-metrics` worker returns:
 
-```javascript
-// api/metrics.js
-export default async function handler(req, res) {
-  // CORS headers
-  const allowedOrigins = [
-    'https://zolpho.github.io',
-    'https://eqty-dao.github.io'
-  ];
-
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Content-Type', 'application/json');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  const API_USER = process.env.API_USERNAME;
-  const API_PASS = process.env.API_PASSWORD;
-
-  if (!API_USER || !API_PASS) {
-    return res.status(500).json({ error: 'API credentials not configured' });
-  }
-
-  const auth = Buffer.from(\`\${API_USER}:\${API_PASS}\`).toString('base64');
-
-  try {
-    const [kucoinData, gateioData] = await Promise.all([
-      getExchangeMetrics('ea5d7b611fd1da6ad5bffd559bac3c0ed6ed11d0', 'kucoin', 'EQTY-USDT', 'cex_mm_kucoin', 'kucoin', auth),
-      getExchangeMetrics('da6132e324292f6f7b914b58333808506f741db0', 'gate_io', 'EQTY-USDT', 'cex_mm_gate', 'gate_io', auth)
-    ]);
-
-    const metrics = {
-      timestamp: Math.floor(Date.now() / 1000),
-      kucoin: kucoinData,
-      gateio: gateioData
-    };
-
-    return res.status(200).json(metrics);
-  } catch (error) {
-    console.error('Metrics error:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch metrics',
-      message: error.message,
-      timestamp: Math.floor(Date.now() / 1000),
-      kucoin: getErrorMetrics(),
-      gateio: getErrorMetrics()
-    });
-  }
-}
-
-async function getExchangeMetrics(botId, connector, pair, accountName, portfolioKey, auth) {
-  const API_BASE = 'https://hummingbot-api.eqty.pro';
-
-  try {
-    const [statusRes, obRes, portfolioRes] = await Promise.all([
-      fetch(\`\${API_BASE}/bot-orchestration/\${botId}/status\`, {
-        headers: { 'Authorization': \`Basic \${auth}\` }
-      }),
-      fetch(\`\${API_BASE}/market-data/order-book\`, {
-        method: 'POST',
-        headers: { 'Authorization': \`Basic \${auth}\`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ connector_name: connector, trading_pair: pair })
-      }),
-      fetch(\`\${API_BASE}/portfolio/state\`, {
-        method: 'POST',
-        headers: { 'Authorization': \`Basic \${auth}\`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_names: [accountName],
-          connector_names: [portfolioKey],
-          skip_gateway: false,
-          refresh: true
-        })
-      })
-    ]);
-
-    const statusData = await statusRes.json();
-    const orderBook = await obRes.json();
-    const portfolioData = await portfolioRes.json();
-
-    const logs = statusData?.data?.general_logs || [];
-    const orders = parseOrdersFromLogs(logs);
-
-    const bestBid = orderBook?.bids?.[0]?.price || 0;
-    const bestAsk = orderBook?.asks?.[0]?.price || 0;
-    const midPrice = (parseFloat(bestBid) + parseFloat(bestAsk)) / 2;
-
-    const balances = portfolioData?.[accountName]?.[portfolioKey] || [];
-    const assets = calculateAssetMetrics(balances, midPrice);
-
-    const buyOrders = orders.filter(o => o.side === 'BUY').length;
-    const sellOrders = orders.filter(o => o.side === 'SELL').length;
-
-    return {
-      ...assets,
-      mid_price: midPrice,
-      best_bid: bestBid,
-      best_ask: bestAsk,
-      active_orders_count: buyOrders + sellOrders,
-      buy_orders_count: buyOrders,
-      sell_orders_count: sellOrders,
-      bot_running: (buyOrders + sellOrders > 0) ? 1 : 0,
-      recently_active: statusData?.data?.recently_active ? 1 : 0
-    };
-  } catch (error) {
-    console.error(\`Error fetching \${connector}:\`, error);
-    return getErrorMetrics();
-  }
-}
-
-function parseOrdersFromLogs(logs) {
-  const orderPattern = /Created (LIMIT_MAKER|LIMIT) (BUY|SELL) order (\S+) for ([\d.]+) EQTY-USDT at ([\d.]+)/;
-  const uniqueOrders = new Map();
-
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const log = logs[i];
-    const msg = log.msg || '';
-    const match = msg.match(orderPattern);
-
-    if (match) {
-      const [, , side, , , price] = match;
-      const priceLevel = parseFloat(price).toFixed(6);
-      const key = \`\${side}_\${priceLevel}\`;
-
-      if (!uniqueOrders.has(key)) {
-        uniqueOrders.set(key, { side, price: parseFloat(price) });
-      }
-    }
-  }
-
-  return Array.from(uniqueOrders.values());
-}
-
-function calculateAssetMetrics(balances, midPrice) {
-  const eqtyBalance = balances.find(b => b.token === 'EQTY') || {};
-  const usdtBalance = balances.find(b => b.token === 'USDT') || {};
-
-  const eqtyTotal = parseFloat(eqtyBalance.units) || 0;
-  const eqtyAvailable = parseFloat(eqtyBalance.available_units) || 0;
-  const usdtTotal = parseFloat(usdtBalance.units) || 0;
-  const usdtAvailable = parseFloat(usdtBalance.available_units) || 0;
-
-  const eqtyValueUSDT = eqtyTotal * midPrice;
-  const usdtValueUSDT = usdtTotal;
-  const totalValueUSDT = eqtyValueUSDT + usdtValueUSDT;
-
-  const eqtyCurrentPct = totalValueUSDT > 0 ? (eqtyValueUSDT / totalValueUSDT) * 100 : 0;
-  const usdtCurrentPct = totalValueUSDT > 0 ? (usdtValueUSDT / totalValueUSDT) * 100 : 0;
-
-  const targetValueUSDT = totalValueUSDT / 2;
-
-  const eqtyOrderAdjust = eqtyValueUSDT > 0 ? (targetValueUSDT / eqtyValueUSDT) * 100 : 100;
-  const usdtOrderAdjust = usdtValueUSDT > 0 ? (targetValueUSDT / usdtValueUSDT) * 100 : 100;
-
-  const inventoryMin = 31.0;
-  const inventoryMax = 69.0;
-
-  return {
-    eqty_current_pct: eqtyCurrentPct,
-    usdt_current_pct: usdtCurrentPct,
-    eqty_order_adjust: eqtyOrderAdjust,
-    usdt_order_adjust: usdtOrderAdjust,
-    is_balanced: (eqtyCurrentPct >= inventoryMin && eqtyCurrentPct <= inventoryMax) ? 1 : 0,
-    total_value_usdt: totalValueUSDT,
-    eqty_total: eqtyTotal,
-    eqty_available: eqtyAvailable,
-    usdt_total: usdtTotal,
-    usdt_available: usdtAvailable
-  };
-}
-
-function getErrorMetrics() {
-  return {
-    eqty_current_pct: 0,
-    usdt_current_pct: 0,
-    eqty_order_adjust: 100,
-    usdt_order_adjust: 100,
-    is_balanced: 0,
-    total_value_usdt: 0,
-    eqty_total: 0,
-    eqty_available: 0,
-    usdt_total: 0,
-    usdt_available: 0,
-    mid_price: 0,
-    best_bid: 0,
-    best_ask: 0,
-    active_orders_count: 0,
-    buy_orders_count: 0,
-    sell_orders_count: 0,
-    bot_running: 0,
-    recently_active: 0
-  };
-}
-```
-
-**Deploy the metrics endpoint:**
-
-```bash
-cd docker-proxy
-git add api/metrics.js
-git commit -m "Add metrics endpoint for Zabbix"
-vercel --prod
-```
-
-**Test the endpoint:**
-
-```bash
-curl https://docker-proxy-eta.vercel.app/api/metrics
-```
-
-Expected output:
 ```json
 {
-  "timestamp": 1771082986,
-  "kucoin": {
-    "eqty_current_pct": 49.93,
-    "usdt_current_pct": 50.07,
-    "is_balanced": 1,
-    "bot_running": 1,
-    "active_orders_count": 10,
-    ...
-  },
-  "gateio": {
-    ...
-  }
+  "kucoin": { "botrunning": 1 },
+  "gateio": { "botrunning": 1 }
 }
 ```
 
-### 3.2 Vercel Free Tier Optimization
+For richer metrics (portfolio value, inventory %, order counts), the Zabbix HTTP Agent items call the Hummingbot API directly via the `eqty-proxy` worker using the `?endpoint=` pattern.
 
-> ⚠️ **Important:** Without this optimization, Zabbix will exhaust the Vercel free tier within days.
+### 4.2 Zabbix Item Architecture — Dependent Items
 
-#### The Problem
-
-Each Zabbix **HTTP Agent** item makes an independent HTTP request to Vercel. Every request triggers a serverless function **invocation**, which counts toward the monthly quota.
-
-With the naive setup of 18 HTTP Agent items × 3 hosts × 1 poll/min:
+Use **1 master HTTP Agent item** per host that fetches the full JSON payload once. All other items are **Dependent items** using JSONPath — no extra requests.
 
 ```
-18 items × 3 hosts × 1 req/min × 60 × 24 × 30 = ~2,332,800 invocations/month
+Before: 18 HTTP Agent items → 18 Worker calls per cycle
+After:   1 HTTP Agent (master) + 18 Dependent items → 1 Worker call per cycle
 ```
-
-The Vercel **Hobby (free) tier** allows only **100,000 invocations/month** — this blows past it in under 2 days.
-
-#### The Solution — Dependent Items
-
-Use **1 master HTTP Agent item** per host that fetches the full JSON payload once. All other items become **Dependent items** that extract their value locally using JSONPath preprocessing — no additional HTTP request, zero extra Vercel invocations.
-
-```
-Before: 18 HTTP Agent items → 18 Vercel calls per cycle
-After:   1 HTTP Agent (master) + 18 Dependent items → 1 Vercel call per cycle
-```
-
-| Host | Before | After | Monthly saving |
-|---|---|---|---|
-| MM-Bot-KuCoin | 18 calls/min | 1 call/min | ~734,400 invocations |
-| MM-Bot-GateIO | 18 calls/min | 1 call/min | ~734,400 invocations |
-| MM-Bot-Binance | 18 calls/min | 1 call/min | ~734,400 invocations |
-| **Total** | **54 calls/min** | **3 calls/min** | **~2,203,200/month** |
-
-**Result: ~129,600 invocations/month — within the free tier limit. ✅**
-
-#### Master Item Configuration
-
-For each host, create one master item:
-
-| Field | Value |
-|---|---|
-| **Name** | `Metrics Raw (Master)` |
-| **Type** | HTTP agent |
-| **Key** | `bot.metrics.raw` |
-| **Value type** | Text |
-| **URL** | `https://docker-proxy-eta.vercel.app/api/metrics` |
-| **Update interval** | 1m |
-| **History** | 1h (raw JSON, no need to keep longer) |
-| **Trends** | Disabled |
-
-> For `MM-Bot-Binance`, use `/api/metrics_test` instead.
-
-#### Dependent Item Configuration
-
-All other items are configured as:
-
-| Field | Value |
-|---|---|
-| **Type** | Dependent item |
-| **Master item** | `MM-Bot-<Exchange>: Metrics Raw (Master)` |
-| **Preprocessing** | JSONPath (e.g. `$.kucoin.bot_running`) |
-
-The JSONPath, triggers, graphs and value mappings remain **exactly the same** as before — only the item type changes from HTTP Agent to Dependent.
-
----
-
-### 3.3 Zabbix Configuration
-
-#### Create Hosts
-
-1. **Data collection** → **Hosts** → **Create host**
-2. Create two hosts:
-   - **Name**: `MM-Bot-KuCoin`
-   - **Groups**: `Market Makers` (create if doesn't exist)
-   - **Interfaces**: None needed (HTTP agent)
-3. Repeat for `MM-Bot-GateIO`
-
-#### Items (18 per host)
-
-> See [Section 3.2](#32-vercel-free-tier-optimization) — all items except the master should be **Dependent items**, not HTTP Agent, to avoid exhausting the Vercel free tier.
 
 **Master item** (1 per host, HTTP Agent):
-- **Key**: `bot.metrics.raw`
-- **URL**: `https://docker-proxy-eta.vercel.app/api/metrics`
-- **Update interval**: 1m
 
-**Dependent items** (all others, Dependent type):
-- **Master item**: `Metrics Raw (Master)`
-- **Preprocessing**: JSONPath (e.g., `$.kucoin.eqty_current_pct`)
+| Field | Value |
+|---|---|
+| **Key** | `bot.metrics.raw` |
+| **URL** | `https://eqty-metrics.eqtydao.workers.dev` |
+| **Update interval** | 1m |
+| **Value type** | Text |
 
-**Key Items:**
-1. **EQTY Current %** - `$.kucoin.eqty_current_pct` (Units: %)
-2. **USDT Current %** - `$.kucoin.usdt_current_pct` (Units: %)
-3. **Is Balanced** - `$.kucoin.is_balanced` (0=Unbalanced, 1=Balanced)
-4. **Bot Running** - `$.kucoin.bot_running` (0=Stopped, 1=Running)
-5. **Total Value** - `$.kucoin.total_value_usdt` (Units: USDT)
-6. **Active Orders** - `$.kucoin.active_orders_count`
-7. **Mid Price** - `$.kucoin.mid_price` (Units: USDT)
+**Dependent items** use JSONPath preprocessing, e.g. `$.kucoin.botrunning`.
 
-For Gate.io, use `$.gateio.*` instead.
+### 4.3 Create Hosts
 
-#### Create Triggers (8 per host)
+1. **Data collection** → **Hosts** → **Create host**
+2. Create hosts: `MM-Bot-KuCoin`, `MM-Bot-GateIO`
+3. No interface needed (HTTP agent)
 
-**Critical Triggers:**
-1. **Portfolio Critically Unbalanced**
-   - Expression: `last(/MM-Bot-KuCoin/bot.eqty.pct)<31 or last(/MM-Bot-KuCoin/bot.eqty.pct)>69`
-   - Severity: High
-2. **Bot Stopped**
-   - Expression: `last(/MM-Bot-KuCoin/bot.running)=0`
-   - Severity: High
+### 4.4 Key Items (per host)
 
-**Warning Triggers:**
-3. **Approaching Imbalance** - EQTY% between 31-35% or 65-69%
-4. **Order Count Imbalance** - Buy/sell orders differ by >2
-5. **Large Value Change** - Portfolio changed by >100 USDT
-6. **Few Active Orders** - <5 orders but >0
+1. **Bot Running** — `$.kucoin.botrunning` (Value map: 0=Stopped, 1=Running)
+2. **EQTY Current %** — via proxy endpoint
+3. **Is Balanced** — (0=Unbalanced, 1=Balanced)
+4. **Total Value USDT**
+5. **Active Orders Count**
+6. **Mid Price**
 
-**Note:** Remove `%` from trigger names if item has Units configured to avoid double `%%`.
+### 4.5 Triggers
 
-#### Create Graphs (7 per host)
+| Trigger | Severity |
+|---|---|
+| Bot Stopped (`botrunning=0`) | High |
+| Portfolio Critically Unbalanced (EQTY% <31 or >69) | High |
+| Approaching Imbalance (EQTY% 31-35 or 65-69) | Warning |
+| Few Active Orders (<5 but >0) | Warning |
 
-1. **Portfolio Balance %** - EQTY% and USDT% over time
-2. **Order Adjustment %** - Shows rebalancing needs
-3. **Total Portfolio Value** - Value in USDT
-4. **Active Orders** - Buy/sell order counts
-5. **Price Monitoring** - Bid/mid/ask prices
-6. **Token Balances** - EQTY and USDT amounts
-7. **Bot Running Status** - Binary status timeline
+### 4.6 Value Mappings
 
-#### Create Dashboard
-
-**Monitoring** → **Dashboards** → **Create dashboard**
-
-Widgets:
-- Graph widgets for portfolio balance, orders, value
-- Plain text widgets showing current metrics for both exchanges
-- Problems widget for active alerts
-
-### 3.4 Value Mappings
-
-Create reusable value mappings:
-
-**Data collection** → **Value mappings** → **Create value mapping**
-
-1. **Bot Status**: 0=Stopped, 1=Running
-2. **Balance Status**: 0=Unbalanced, 1=Balanced
-3. **Yes/No**: 0=No, 1=Yes
-
-Apply to respective items in **Value mapping** dropdown.
-
-### 3.5 Alerts Setup
-
-**Alerts** → **Actions** → **Trigger actions** → **Create action**
-
-Configure email/Telegram/Slack notifications for:
-- Critical: Portfolio unbalanced, bot stopped
-- Warning: Approaching limits, order issues
+- **Bot Status**: 0=Stopped, 1=Running
+- **Balance Status**: 0=Unbalanced, 1=Balanced
 
 ---
 
-## Exposed Metrics for Monitoring
+## Exposed Metrics
 
 The `window.eqtyBotMetrics` and `window.gateioMetrics` JavaScript objects expose:
 
-- `eqty_current_pct` - Current EQTY percentage (31-69% is safe range)
-- `usdt_current_pct` - Current USDT percentage
-- `is_balanced` - Boolean (1=balanced, 0=unbalanced)
-- `bot_running` - Boolean (1=has orders, 0=stopped)
-- `eqty_order_adjust` - Order size adjustment % for EQTY
-- `usdt_order_adjust` - Order size adjustment % for USDT
-- `total_value_usdt` - Total portfolio value in USDT
-- `active_orders_count` - Number of active orders
-- `mid_price` - Current market mid price
-
-These can be consumed by external monitoring systems via the `/api/metrics` endpoint.
+- `eqty_current_pct` — Current EQTY % (31–69% is safe range)
+- `usdt_current_pct` — Current USDT %
+- `is_balanced` — 1=balanced, 0=unbalanced
+- `bot_running` — 1=has orders, 0=stopped
+- `total_value_usdt` — Total portfolio value in USDT
+- `active_orders_count` — Number of active orders
+- `mid_price` — Current market mid price
 
 ---
 
