@@ -1080,7 +1080,10 @@ function updateStatusBadge() {
   }
   const pos = 'color:#15803d;font-weight:700';
   const neg = 'color:#dc2626;font-weight:700';
-  const rows = Object.keys(dayMap).sort().reverse().map(key => {
+  const rows = Object.keys(dayMap).sort((a,b)=>{
+    const [ay,am,ad]=a.split("-").map(Number),[by,bm,bd]=b.split("-").map(Number);
+    return (new Date(by,bm,bd))-(new Date(ay,am,ad));
+  }).map(key => {
     const { label, trades: dt } = dayMap[key];
     const s = computePnlStats(dt);
     const spreadPct = s.avgBuyPrice > 0 ? (s.spread / s.avgBuyPrice * 100) : 0;
