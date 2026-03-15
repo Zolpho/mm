@@ -674,8 +674,8 @@ async function fetchBotRunningStatus() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     
-    window.kucoinBotRunning = data.kucoin?.botrunning === 1;
-    window.gateioBotRunning = data.gateio?.botrunning === 1;
+    window.kucoinBotRunning = data.kucoin?.bot_running === 1;
+    window.gateioBotRunning = data.gateio?.bot_running === 1;
     trackDowntime('kucoin', window.kucoinBotRunning);
     trackDowntime('gateio', window.gateioBotRunning);
     const _at = document.querySelector('.tab.active')?.dataset.tab;
