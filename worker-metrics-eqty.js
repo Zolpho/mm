@@ -180,7 +180,7 @@ function getErrorMetrics() {
     is_balanced: 0, total_value_usdt: 0, eqty_total: 0, eqty_available: 0,
     usdt_total: 0, usdt_available: 0, mid_price: 0, best_bid: 0, best_ask: 0,
     active_orders_count: 0, buy_orders_count: 0, sell_orders_count: 0,
-    botrunning: 0, recently_active: 0,
+    bot_running: 0, recently_active: 0,
   };
 }
 
