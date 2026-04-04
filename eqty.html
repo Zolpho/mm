@@ -386,6 +386,10 @@
           <button class="days-btn active" data-days="1" onclick="loadKucoinData(1)">1D</button>
           <button class="days-btn" data-days="7" onclick="loadKucoinData(7)">7D</button>
           <button class="days-btn" data-days="30" onclick="loadKucoinData(30)">30D</button>
+          <button class="days-btn" data-days="60" onclick="loadKucoinData(60)">60D</button>
+          <button class="days-btn" data-days="90" onclick="loadKucoinData(90)">90D</button>
+          <button class="days-btn" data-days="120" onclick="loadKucoinData(120)">120D</button>
+          <button class="days-btn" data-days="180" onclick="loadKucoinData(180)">180D</button>
         </span>
       </h2>
       <div id="kucoin-pnl" class="loading">Loading P&L...</div>
@@ -417,6 +421,10 @@
             <button class="days-btn active" data-days="1" onclick="loadGateioData(1)">1D</button>
             <button class="days-btn" data-days="7" onclick="loadGateioData(7)">7D</button>
             <button class="days-btn" data-days="30" onclick="loadGateioData(30)">30D</button>
+            <button class="days-btn" data-days="60" onclick="loadGateioData(60)">60D</button>
+            <button class="days-btn" data-days="90" onclick="loadGateioData(90)">90D</button>
+            <button class="days-btn" data-days="120" onclick="loadGateioData(120)">120D</button>
+            <button class="days-btn" data-days="180" onclick="loadGateioData(180)">180D</button>
           </span>
         </h2>
         <div id="gateio-pnl" class="loading">Loading P&L...</div>
@@ -432,7 +440,7 @@
 
   <script>
     // Vercel proxy base (server-side credentials)
-    const API_BASE = 'https://eqty-proxy.eqtydao.workers.dev';
+    const API_BASE = 'https://docker-proxy-eta.vercel.app/api/docker';
 
     // Generic fetch via proxy
     async function fetchWithAuth(endpoint) {
@@ -670,7 +678,7 @@ async function fetchMQTTStatus() {
 // Fetch bot running status from metrics API
 async function fetchBotRunningStatus() {
   try {
-    const response = await fetch('https://eqty-metrics.eqtydao.workers.dev');
+    const response = await fetch('https://docker-proxy-eta.vercel.app/api/metrics');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     
@@ -1197,19 +1205,10 @@ async function loadGateioBalance() {
       h.setAttribute('data-theme',n);localStorage.setItem('theme',n);
       const b=document.getElementById('theme-toggle');if(b)b.textContent=n==='dark'?'\u2600\uFE0F':'\uD83C\uDF19';
     }
-    document.addEventListener('DOMContentLoaded', () => {
-      const s = localStorage.getItem('theme') || 'dark';
-      document.documentElement.setAttribute('data-theme', s);
-      const b = document.getElementById('theme-toggle');
-      if (b) b.textContent = s === 'dark' ? '☀️' : '🌙';
-
-      // Auto-load Docker tab on first visit
-      refreshAll();
-      updateTimestamp();
-      setInterval(refreshAll, 120000);
-      setInterval(updateTimestamp, 120000);
+    document.addEventListener('DOMContentLoaded',()=>{
+      const s=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',s);
+      const b=document.getElementById('theme-toggle');if(b)b.textContent=s==='dark'?'\u2600\uFE0F':'\uD83C\uDF19';
     });
-    
     document.addEventListener('click',()=>document.querySelectorAll('.stat-help.open').forEach(el=>el.classList.remove('open')));
     // ── P&L ──────────────────────────────────────────────────────────────────
     function computePnlStats(trades){
@@ -1311,22 +1310,19 @@ async function loadGateioBalance() {
         dayMap[key].trades.push(t);
     }
 
-    const rows = Object.keys(dayMap).sort((a, b) => {
-        const [ay, am, ad] = a.split('-').map(Number);
-        const [by, bm, bd] = b.split('-').map(Number);
-        return new Date(ay, am, ad) - new Date(by, bm, bd); // oldest first → newest last
-    }).map(key => {
+    const rows = Object.keys(dayMap).sort().map(key => {
         const { label, trades: dt } = dayMap[key];
         const s = computePnlStats(dt);
         const spreadPct = s.avgBuyPrice > 0 ? (s.spread / s.avgBuyPrice * 100) : 0;
-        const hasRoundTrip = spreadPct > 0.001;
+        const spreadOk = spreadPct > 0;
         const ret = portfolioValue > 0 ? (s.netPnl / portfolioValue * 100) : null;
         const pos = 'color:#15803d;font-weight:700', neg = 'color:#dc2626;font-weight:700';
 
         return `<tr>
             <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb">${label}</td>
             <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb">
-                <span style="${hasRoundTrip ? pos : 'color:#9ca3af'}">${hasRoundTrip ? '+' + spreadPct.toFixed(2) + '% ✓' : '—'}</span>
+                <span style="${spreadOk ? pos : neg}">${spreadPct >= 0 ? '+' : ''}${spreadPct.toFixed(2)}%</span>
+                ${spreadOk ? ' ✅' : ' ❌'}
             </td>
             <td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;${s.netEqtyChange > 0 ? pos : s.netEqtyChange < 0 ? neg : ''}">
                 ${s.netEqtyChange > 0 ? '+' : ''}${Math.round(s.netEqtyChange).toLocaleString()}
@@ -1437,6 +1433,8 @@ async function loadGateioBalance() {
             <button class="days-btn" data-days="7" onclick="loadActivityKucoin(7)">7D</button>
             <button class="days-btn active" data-days="14" onclick="loadActivityKucoin(14)">14D</button>
             <button class="days-btn" data-days="30" onclick="loadActivityKucoin(30)">30D</button>
+            <button class="days-btn" data-days="60" onclick="loadActivityKucoin(60)">60D</button>
+            <button class="days-btn" data-days="90" onclick="loadActivityKucoin(90)">90D</button>
           </span>
         </h2>
         <div id="activity-kucoin" class="loading">Loading heatmap...</div>
@@ -1449,6 +1447,8 @@ async function loadGateioBalance() {
             <button class="days-btn" data-days="7" onclick="loadActivityGateio(7)">7D</button>
             <button class="days-btn active" data-days="14" onclick="loadActivityGateio(14)">14D</button>
             <button class="days-btn" data-days="30" onclick="loadActivityGateio(30)">30D</button>
+            <button class="days-btn" data-days="60" onclick="loadActivityGateio(60)">60D</button>
+            <button class="days-btn" data-days="90" onclick="loadActivityGateio(90)">90D</button>
           </span>
         </h2>
         <div id="activity-gateio" class="loading">Loading heatmap...</div>
