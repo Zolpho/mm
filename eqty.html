@@ -385,7 +385,12 @@
         <span class="days-selector" id="kucoin-days-selector">
           <button class="days-btn active" data-days="1" onclick="loadKucoinData(1)">1D</button>
           <button class="days-btn" data-days="7" onclick="loadKucoinData(7)">7D</button>
+          <button class="days-btn" data-days="14" onclick="loadKucoinData(14)">14D</button>
           <button class="days-btn" data-days="30" onclick="loadKucoinData(30)">30D</button>
+          <button class="days-btn" data-days="60" onclick="loadKucoinData(60)">60D</button>
+          <button class="days-btn" data-days="90" onclick="loadKucoinData(90)">90D</button>
+          <button class="days-btn" data-days="120" onclick="loadKucoinData(120)">120D</button>
+          <button class="days-btn" data-days="180" onclick="loadKucoinData(180)">180D</button>
         </span>
       </h2>
       <div id="kucoin-pnl" class="loading">Loading P&L...</div>
@@ -416,7 +421,12 @@
           <span class="days-selector" id="gateio-days-selector">
             <button class="days-btn active" data-days="1" onclick="loadGateioData(1)">1D</button>
             <button class="days-btn" data-days="7" onclick="loadGateioData(7)">7D</button>
+            <button class="days-btn" data-days="14" onclick="loadGateioData(14)">14D</button>
             <button class="days-btn" data-days="30" onclick="loadGateioData(30)">30D</button>
+            <button class="days-btn" data-days="60" onclick="loadGateioData(60)">60D</button>
+            <button class="days-btn" data-days="90" onclick="loadGateioData(90)">90D</button>
+            <button class="days-btn" data-days="120" onclick="loadGateioData(120)">120D</button>
+            <button class="days-btn" data-days="180" onclick="loadGateioData(180)">180D</button>
           </span>
         </h2>
         <div id="gateio-pnl" class="loading">Loading P&L...</div>
@@ -1426,6 +1436,8 @@ async function loadGateioBalance() {
             <button class="days-btn" data-days="7" onclick="loadActivityKucoin(7)">7D</button>
             <button class="days-btn active" data-days="14" onclick="loadActivityKucoin(14)">14D</button>
             <button class="days-btn" data-days="30" onclick="loadActivityKucoin(30)">30D</button>
+            <button class="days-btn" data-days="60" onclick="loadActivityKucoin(60)">60D</button>
+            <button class="days-btn" data-days="90" onclick="loadActivityKucoin(90)">90D</button>
           </span>
         </h2>
         <div id="activity-kucoin" class="loading">Loading heatmap...</div>
@@ -1438,6 +1450,8 @@ async function loadGateioBalance() {
             <button class="days-btn" data-days="7" onclick="loadActivityGateio(7)">7D</button>
             <button class="days-btn active" data-days="14" onclick="loadActivityGateio(14)">14D</button>
             <button class="days-btn" data-days="30" onclick="loadActivityGateio(30)">30D</button>
+            <button class="days-btn" data-days="60" onclick="loadActivityGateio(60)">60D</button>
+            <button class="days-btn" data-days="90" onclick="loadActivityGateio(90)">90D</button>
           </span>
         </h2>
         <div id="activity-gateio" class="loading">Loading heatmap...</div>
