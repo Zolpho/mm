@@ -1186,7 +1186,7 @@ async function loadGateioBalance() {
 
 
     // ── UPTIME ───────────────────────────────────────────────────────────────
-    const UPTIME_CONFIG={kucoin:{start:new Date('2026-02-01T00:00:00')},gateio:{start:null}};
+    const UPTIME_CONFIG={kucoin:{start:new Date('2026-04-05T10:00:00Z')},gateio:{start:null}};
     function _dk(ex){return`uptime_down_s_${ex}`;}
     function trackDowntime(ex,ok){if(!ok){const k=_dk(ex);localStorage.setItem(k,parseInt(localStorage.getItem(k)||'0')+120);}}
     function getUptimeStats(ex){
