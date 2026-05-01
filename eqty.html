@@ -1313,7 +1313,11 @@ async function loadGateioBalance() {
         dayMap[key].trades.push(t);
     }
 
-    const rows = Object.keys(dayMap).sort().map(key => {
+    const rows = Object.keys(dayMap).sort((a, b) => {
+    const [ay, am, ad] = a.split('-').map(Number);
+    const [by, bm, bd] = b.split('-').map(Number);
+    return new Date(by, bm, bd) - new Date(ay, am, ad);
+}).map(key => {
         const { label, trades: dt } = dayMap[key];
         const s = computePnlStats(dt);
         const spreadPct = s.avgBuyPrice > 0 ? (s.spread / s.avgBuyPrice * 100) : 0;
